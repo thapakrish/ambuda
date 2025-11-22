@@ -113,23 +113,29 @@ def create_project(title, pdf_path):
 
 
 @cli.command()
-@click.option("--slug", help="slug of the project to migrate")
-def migrate_project(slug):
-    """Migrate a project's PDF to S3 storage."""
+def migrate_projects():
+    """Migrate all project PDFs to S3 storage."""
     current_app = ambuda.create_app("development")
     with current_app.app_context():
-        pdf_path = (
-            Path(current_app.config["UPLOAD_FOLDER"])
-            / "projects"
-            / slug
-            / "pdf"
-            / "source.pdf"
-        )
-        move_project_pdf_to_s3_inner(
-            project_slug=slug,
-            pdf_path=pdf_path,
-            app_environment=current_app.config["AMBUDA_ENVIRONMENT"],
-        )
+        projects = q.projects()
+        for project in projects:
+            print(f"Project: {project.slug}")
+            slug = project.slug
+            pdf_path = (
+                Path(current_app.config["UPLOAD_FOLDER"])
+                / "projects"
+                / slug
+                / "pdf"
+                / "source.pdf"
+            )
+            try:
+                move_project_pdf_to_s3_inner(
+                    project_slug=slug,
+                    pdf_path=pdf_path,
+                    app_environment=current_app.config["AMBUDA_ENVIRONMENT"],
+                )
+            except Exception as e:
+                print(f"Exception: {e}")
 
 
 if __name__ == "__main__":

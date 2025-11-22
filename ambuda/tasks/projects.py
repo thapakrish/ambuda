@@ -182,6 +182,9 @@ def move_project_pdf_to_s3_inner(*, project_slug, pdf_path, app_environment):
         s3_dest.upload_file(pdf_path)
         logging.info(f"Uploaded {project.id} PDF path to {s3_dest}.")
 
+        Path(pdf_path).unlink()
+        logging.info(f"Removed local file {pdf_path}.")
+
 
 @app.task(bind=True)
 def move_project_pdf_to_s3(self, *, project_slug, pdf_path, app_environment):
