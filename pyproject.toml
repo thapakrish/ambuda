@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "babel>=2.12.1",
+    "boto3>=1.41.2",
     "celery==5.5.3",
     "email-validator==1.2.1",
     "flask==3.0.0",
@@ -36,6 +37,7 @@ dependencies = [
     "setuptools<81",
     "sqlalchemy==2.0.44",
     # Need to pin for flask.
+    "vidyut>=0.4.0",
     "werkzeug==3.0.1",
     "wtforms==3.0.1",
     "wtforms-sqlalchemy==0.3",
@@ -47,6 +49,7 @@ dev = [
     "click==8.1.3",
     "conllu==4.5.2",
     "fabric==3.2.2",
+    "moto[s3]>=5.1.17",
     "mypy-extensions==0.4.3",
     "pytest==8.4.2",
     "pytest-cov==7.0.0",

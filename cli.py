@@ -12,7 +12,10 @@ import ambuda
 from ambuda import database as db
 from ambuda import queries as q
 from ambuda.seed.utils.data_utils import create_db
-from ambuda.tasks.projects import create_project_inner
+from ambuda.tasks.projects import (
+    create_project_inner,
+    move_project_pdf_to_s3_inner,
+)
 from ambuda.tasks.utils import LocalTaskStatus
 
 engine = create_db()
@@ -106,6 +109,26 @@ def create_project(title, pdf_path):
             app_environment=current_app.config["AMBUDA_ENVIRONMENT"],
             creator_id=arbitrary_user.id,
             task_status=LocalTaskStatus(),
+        )
+
+
+@cli.command()
+@click.option("--slug", help="slug of the project to migrate")
+def migrate_project(slug):
+    """Migrate a project's PDF to S3 storage."""
+    current_app = ambuda.create_app("development")
+    with current_app.app_context():
+        pdf_path = (
+            Path(current_app.config["UPLOAD_FOLDER"])
+            / "projects"
+            / slug
+            / "pdf"
+            / "source.pdf"
+        )
+        move_project_pdf_to_s3_inner(
+            project_slug=slug,
+            pdf_path=pdf_path,
+            app_environment=current_app.config["AMBUDA_ENVIRONMENT"],
         )
 
 

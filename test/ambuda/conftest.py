@@ -1,3 +1,7 @@
+import os
+
+import boto3
+import moto
 import pytest
 from flask_login import FlaskLoginClient
 from sqlalchemy import select
@@ -177,6 +181,18 @@ def initialize_test_db():
     session.add(revision)
 
     session.commit()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def s3_mocks():
+    """autouse so that every test automatically uses mocks."""
+    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+
+    with moto.mock_aws():
+        conn = boto3.resource("s3")
+        conn.create_bucket(Bucket="test-ambuda")
+        yield
 
 
 @pytest.fixture(scope="session")

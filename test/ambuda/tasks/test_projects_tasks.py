@@ -17,16 +17,16 @@ def _create_sample_pdf(output_path: str, num_pages: int):
     doc.save(output_path)
 
 
-def test_create_project_inner(flask_app):
+def test_create_project_inner(flask_app, s3_mocks):
     with flask_app.app_context():
-        project = q.project("cool-project")
+        project = q.project("test-cool-project")
         assert project is None
 
         f = tempfile.NamedTemporaryFile()
         _create_sample_pdf(f.name, num_pages=10)
 
         projects.create_project_inner(
-            display_title="Cool project",
+            display_title="Test cool project",
             pdf_path=f.name,
             output_dir=flask_app.config["UPLOAD_FOLDER"],
             app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
@@ -34,6 +34,6 @@ def test_create_project_inner(flask_app):
             task_status=ambuda.tasks.utils.LocalTaskStatus(),
         )
 
-        project = q.project("cool-project")
+        project = q.project("test-cool-project")
         assert project
         assert len(project.pages) == 10

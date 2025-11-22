@@ -1,5 +1,6 @@
 """Models related to our proofing work."""
 
+import uuid
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
@@ -17,6 +18,10 @@ def string():
 def text():
     """Create a non-nullable text column that defaults to the empty string."""
     return Column(Text_, nullable=False, default="")
+
+
+def _create_uuid():
+    return str(uuid.uuid4())
 
 
 class Genre(Base):
@@ -49,6 +54,8 @@ class Project(Base):
     id = pk()
     #: Human-readable ID, which we display in the URL.
     slug = Column(String, unique=True, nullable=False)
+    #: UUID (for s3 uploads, stability despite slug renames, etc.)
+    uuid = Column(String, unique=True, nullable=False, default=_create_uuid)
 
     #: Human-readable title, which we show on the page.
     display_title = Column(String, nullable=False)

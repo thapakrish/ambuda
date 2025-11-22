@@ -86,6 +86,10 @@ class BaseConfig:
     #: Logger setup
     LOG_LEVEL = logging.INFO
 
+    # Cloud
+    S3_BUCKET = _env("S3_BUCKET")
+
+    # Vidyut extensions
     VIDYUT_DATA_DIR = _env("VIDYUT_DATA_DIR")
 
     # Extensions
@@ -152,14 +156,20 @@ class BaseConfig:
     # so we don't need to define it on the Config object here.
 
 
-class UnitTestConfig(BaseConfig):
-    """For unit tests."""
+class UnitTestConfig:
+    """For unit tests.
+
+    For a clean test setup, don't inherit from BaseConfig."""
 
     AMBUDA_ENVIRONMENT = TESTING
     TESTING = True
     SECRET_KEY = "insecure unit test secret"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     UPLOAD_FOLDER = _make_path(Path(__file__).parent / "data" / "file-uploads")
+    VIDYUT_DATA_DIR = "test-vidyut"
+    BABEL_DEFAULT_LOCALE = "en"
+
+    S3_BUCKET = "test-ambuda"
 
     #: Logger setup
     LOG_LEVEL = logging.DEBUG
@@ -249,11 +259,11 @@ def _validate_config(config: BaseConfig):
     if not config.UPLOAD_FOLDER:
         raise ValueError("This config does not define UPLOAD_FOLDER.")
 
-    if not config.VIDYUT_DATA_DIR:
-        raise ValueError("This config does not define UPLOAD_FOLDER.")
-
     if not Path(config.UPLOAD_FOLDER).is_absolute():
         raise ValueError("UPLOAD_FOLDER must be an absolute path.")
+
+    if not config.VIDYUT_DATA_DIR:
+        raise ValueError("This config does not define VIDYUT_DATA_DIR.")
 
     # Production-specific validation.
     if config.AMBUDA_ENVIRONMENT == PRODUCTION:

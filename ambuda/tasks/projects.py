@@ -1,6 +1,8 @@
 """Background tasks for proofing projects."""
 
 import logging
+import uuid
+import os
 from pathlib import Path
 
 # NOTE: `fitz` is the internal package name for PyMuPDF. PyPI hosts another
@@ -12,6 +14,7 @@ from sqlalchemy import select
 
 from ambuda import database as db
 from ambuda import queries as q
+from ambuda.s3_utils import S3Path
 from ambuda.tasks import app
 from ambuda.tasks.utils import CeleryTaskStatus, TaskStatus
 from config import create_config_only_app
@@ -122,6 +125,10 @@ def create_project_inner(
             creator_id=creator_id,
         )
 
+        move_project_pdf_to_s3_inner(
+            project_slug=slug, pdf_path=str(pdf_path), app_environment=app_environment
+        )
+
     task_status.success(num_pages, slug)
 
 
@@ -147,4 +154,38 @@ def create_project(
         app_environment=app_environment,
         creator_id=creator_id,
         task_status=task_status,
+    )
+
+
+def move_project_pdf_to_s3_inner(*, project_slug, pdf_path, app_environment):
+    """Temporary task to move project PDFs to S3."""
+
+    # Tasks must be idempotent. Exit if the project already exists.
+    app = create_config_only_app(app_environment)
+    with app.app_context():
+        session = q.get_session()
+        stmt = select(db.Project).filter_by(slug=project_slug)
+        project = session.scalars(stmt).first()
+
+        s3_bucket = app.config["S3_BUCKET"]
+        if not s3_bucket:
+            logging.info(f"No s3 bucket found")
+            return
+
+        s3_dest = S3Path(
+            bucket=s3_bucket, key=f"proofing/{project.uuid}/pdf/source.pdf"
+        )
+        if s3_dest.exists():
+            logging.info(f"S3 path {s3_dest} already exists.")
+            return
+
+        s3_dest.upload_file(pdf_path)
+        logging.info(f"Uploaded {project.id} PDF path to {s3_dest}.")
+
+
+@app.task(bind=True)
+def move_project_pdf_to_s3(self, *, project_slug, pdf_path, app_environment):
+    """Temporary task to move project PDFs to S3."""
+    move_project_pdf_to_s3_inner(
+        project_slug=project_slug, pdf_path=pdf_path, app_environment=app_environment
     )
