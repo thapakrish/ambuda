@@ -13,11 +13,6 @@ def index():
     return render_template("index.html")
 
 
-@bp.route("/server")
-def server():
-    return render_template("server.html")
-
-
 @bp.route("/contact")
 def contact():
     return redirect(url_for("about.contact"))
