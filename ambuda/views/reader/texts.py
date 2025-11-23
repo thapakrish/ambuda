@@ -62,22 +62,6 @@ def _make_section_url(text: db.Text, section: db.TextSection | None) -> str | No
         return None
 
 
-def _section_groups(sections: list[db.TextSection]) -> dict[str, list[db.TextSection]]:
-    """Groups section hierarchically according to their slug.
-
-    For example, the sections `[1.1, 1.2, 2.1, 2.2]` will be grouped as::
-
-        { "1": [1.1, 1.2], "2": [2.1, 2.2] }
-    """
-    grouper = {}
-    for s in sections:
-        key, _, _ = s.slug.rpartition(".")
-        if key not in grouper:
-            grouper[key] = []
-        grouper[key].append(s)
-    return grouper
-
-
 def _hk_to_dev(s: str) -> str:
     return sanscript.transliterate(s, sanscript.HK, sanscript.DEVANAGARI)
 
@@ -98,15 +82,35 @@ def text(slug):
     if text is None:
         abort(404)
 
-    # NOTE: experimental -- metadata paths may move at any time.
-    prefix_titles = {}
     try:
         config = json.loads(text.config)
-        prefix_titles = config["titles"]
     except Exception:
-        pass
+        config = {}
 
-    section_groups = _section_groups(text.sections)
+    # NOTE: experimental -- metadata paths may move at any time.
+    try:
+        prefix_titles = config["titles"]["fixed"]
+    except Exception:
+        prefix_titles = {}
+
+    section_groups = {}
+    for section in text.sections:
+        key, _, _ = section.slug.rpartition(".")
+        if key not in section_groups:
+            section_groups[key] = []
+
+        name = section.slug
+        if section.slug.count(".") == 1:
+            x, y = section.slug.split(".")
+            # NOTE: experimental -- metadata paths may move at any time.
+            try:
+                pattern = config["titles"]["patterns"]["x.y"]
+            except Exception:
+                pattern = None
+            if pattern:
+                name = pattern.format(x=x, y=y)
+        section_groups[key].append((section.slug, name))
+
     return render_template(
         "texts/text.html",
         text=text,
