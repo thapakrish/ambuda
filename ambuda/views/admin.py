@@ -137,6 +137,8 @@ class ModelConfig:
     tasks: list[Task] = field(default_factory=list)
     #: If set, the model can't be mutated.
     read_only: bool = False
+    #: Permission required: 'admin' or 'moderator'. Defaults to 'admin'.
+    permission: str = "admin"
 
 
 MODEL_CONFIG = [
@@ -166,6 +168,7 @@ MODEL_CONFIG = [
         list_columns=["id", "sa_title", "title"],
         searchable_columns=["sa_title", "title"],
         category=Category.SITE,
+        permission="moderator",
     ),
     ModelConfig(
         model=db.Dictionary,
@@ -186,6 +189,7 @@ MODEL_CONFIG = [
         list_columns=["id", "name"],
         searchable_columns=["name"],
         category=Category.PROOFING,
+        permission="moderator",
     ),
     ModelConfig(
         model=db.Page,
@@ -226,6 +230,7 @@ MODEL_CONFIG = [
         list_columns=["id", "sa_title", "en_title", "cost_inr"],
         searchable_columns=["sa_title", "en_title"],
         category=Category.SITE,
+        permission="moderator",
     ),
     ModelConfig(
         model=db.Revision,
@@ -295,7 +300,21 @@ def get_model_config(model_name):
 
 @bp.before_request
 def check_access():
-    if not current_user.is_moderator:
+    if request.endpoint == "admin.index":
+        if not current_user.is_moderator:
+            abort(404)
+        return
+
+    model_name = request.view_args.get("model_name") if request.view_args else None
+    if not model_name:
+        abort(404)
+    config = get_model_config(model_name)
+    if not config:
+        abort(404)
+
+    if config.permission == "admin" and not current_user.is_admin:
+        abort(404)
+    if config.permission == "moderator" and not current_user.is_moderator:
         abort(404)
 
 
