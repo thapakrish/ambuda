@@ -7,7 +7,9 @@ We define texts with three different tables:
 - `TextBlock` is typically a verse or paragraph within a `TextSection`.
 """
 
-from sqlalchemy import Column, Integer, String
+import json
+
+from sqlalchemy import Column, Integer, String, JSON, event
 from sqlalchemy import Text as _Text
 from sqlalchemy.orm import relationship
 
@@ -26,7 +28,13 @@ class Text(Base):
     #: The title of this text.
     title = Column(String, nullable=False)
     #: Metadata for this text, as a <teiHeader> element.
+    #: This is public-facing metadata as part of a TEI document.
     header = Column(_Text)
+    #: Additional metadata for this text as a JSON document.
+    #: This is mainly for ambuda-internal notes on heading names, etc.
+    # NOTE: `meta` is reserved by WTForms and `metadata` has other meanings in sqlalchemy,
+    # NOE: so just call this `config`.
+    config = Column(JSON, nullable=True)
     genre_id = foreign_key("genres.id", nullable=True)
 
     #: An ordered list of the sections contained within this text.
@@ -36,6 +44,16 @@ class Text(Base):
 
     def __str__(self):
         return self.slug
+
+
+@event.listens_for(Text, "before_insert")
+@event.listens_for(Text, "before_update")
+def validate_text(mapper, connection, text):
+    if text.config:
+        try:
+            json.loads(text.config)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"Text.meta must be a valid JSON document: {e}")
 
 
 class TextSection(Base):

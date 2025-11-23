@@ -8,7 +8,7 @@ from flask import Blueprint, render_template, abort, request, redirect, url_for,
 from flask_login import current_user
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileRequired
-from sqlalchemy import inspect, Text
+from sqlalchemy import inspect, Text, JSON
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms import (
     Form,
@@ -93,7 +93,7 @@ def create_model_form(model_class, obj=None):
 
             if target_model_class:
                 session = q.get_session()
-                choices = [(None, "-- None --")] if column.nullable else []
+                choices = [("", "-- None --")] if column.nullable else []
                 for item in session.query(target_model_class).limit(100).all():
                     label = str(
                         getattr(item, "slug", None)
@@ -102,13 +102,28 @@ def create_model_form(model_class, obj=None):
                         or getattr(item, "id")
                     )
                     choices.append((item.id, label))
+
+                def coerce_int_or_none(x):
+                    if x == "" or x is None:
+                        return None
+                    return int(x)
+
                 fields[col_name] = SelectField(
                     col_name,
                     choices=choices,
-                    coerce=lambda x: int(x) if x else None,
+                    coerce=coerce_int_or_none,
                     **field_kwargs,
                 )
                 continue
+
+        # Check if this is a JSON field
+        if isinstance(col_type, JSON):
+            fields[col_name] = TextAreaField(
+                col_name,
+                render_kw={"style": "font-family: monospace;", "rows": 10},
+                **field_kwargs,
+            )
+            continue
 
         python_type = col_type.python_type
         if python_type == int:
@@ -646,7 +661,7 @@ def edit_model(model_name, item_id):
             session.commit()
             flash(f"{model_name} updated successfully", "success")
             return redirect(url_for("admin.list_model", model_name=model_name))
-        except SQLAlchemyError as e:
+        except (SQLAlchemyError, ValueError) as e:
             session.rollback()
             flash(f"Error updating {model_name}: {str(e)}", "error")
             # Continue to re-render the form with the error

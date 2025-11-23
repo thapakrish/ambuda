@@ -7,7 +7,7 @@
 {% for s in sections %}
   {% set url = url_for('texts.section', text_slug=text.slug, section_slug=s.slug) %}
   <li><a class="block hover:underline"
-        href="{{ url }}">{{ s.title | devanagari }}
+        href="{{ url }}">{{ 'sargaH 1' | devanagari }}
   </a></li>
 {% endfor %}
 </ul>
@@ -21,12 +21,16 @@
 {{ m.text_tabs(text=text, active='contents') }}
 
 {% if text.sections|length == 1 %}
-{% set url = url_for("texts.section", text_slug=text.slug, section_slug='all') %}
-<p class="text-center mt-16">
-  <a class="btn btn-submit p-4" href="{{ url }}">{{ _('Show full text') }}</a>
-</p>
+  {% set url = url_for("texts.section", text_slug=text.slug, section_slug='all') %}
+  <p class="text-center mt-16">
+    <a class="btn btn-submit p-4" href="{{ url }}">{{ _('Show full text') }}</a>
+  </p>
 {% else %}
   {% for prefix, sections in section_groups.items() %}
+  {%- set title = prefix_titles[prefix] -%}
+  {% if title -%}
+  <h2 class="font-bold text-xl">{{ prefix_titles[prefix] }}</h2>
+  {%- endif %}
   {{ section_grid(sections) }}
   {% endfor %}
 {% endif %}

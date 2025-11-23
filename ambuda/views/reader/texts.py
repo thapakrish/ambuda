@@ -98,8 +98,21 @@ def text(slug):
     if text is None:
         abort(404)
 
+    # NOTE: experimental -- metadata paths may move at any time.
+    prefix_titles = {}
+    try:
+        config = json.loads(text.config)
+        prefix_titles = config["titles"]
+    except Exception:
+        pass
+
     section_groups = _section_groups(text.sections)
-    return render_template("texts/text.html", text=text, section_groups=section_groups)
+    return render_template(
+        "texts/text.html",
+        text=text,
+        section_groups=section_groups,
+        prefix_titles=prefix_titles,
+    )
 
 
 @bp.route("/<slug>/about")
