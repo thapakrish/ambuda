@@ -1,3 +1,14 @@
+{#- from heroicons.com -#}
+{%- macro i_lock() %}
+<svg style="display: none" version="2.0">
+  <defs>
+    <symbol id="lock" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-4">
+      <path fill-rule="evenodd" d="M8 1a3.5 3.5 0 0 0-3.5 3.5V7A1.5 1.5 0 0 0 3 8.5v5A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5v-5A1.5 1.5 0 0 0 11.5 7V4.5A3.5 3.5 0 0 0 8 1Zm2 6V4.5a2 2 0 1 0-4 0V7h4Z" clip-rule="evenodd" />
+    </symbol>
+  </defs>
+</svg>
+{% endmacro -%}
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -8,6 +19,7 @@
     <title>{% block title %}Admin{% endblock %} - Ambuda</title>
   </head>
   <body class="bg-slate-50">
+    {{ i_lock() }}
     <div class="flex h-screen">
       <aside class="w-64 bg-slate-800 text-white flex flex-col">
         <div class="p-4 border-b border-slate-700">
@@ -27,8 +39,24 @@
                 <a href="{{ url_for('admin.list_model', model_name=model_name) }}"
                    class="block px-3 py-2 rounded hover:bg-slate-700 transition flex justify-between {% if current_model == model_name %}bg-slate-700{% endif %}">
                   <span>{{ model_name }}</span>
-                  <span>{% if config.read_only %} 🔒{% endif %}</span>
+                  {%- if config.read_only -%}
+                  <span class="text-slate-500">
+                    <svg width="16" height="16"><use href="#lock"></use></svg>
+                  </span>
+                  {%- endif -%}
                 </a>
+                {% if config.tasks %}
+                <ul class="ml-3 mt-1 space-y-0.5">
+                  {% for task in config.tasks %}
+                  <li>
+                    <a href="{{ url_for('admin.run_task', model_name=model_name, task_slug=task.slug) }}"
+                       class="block px-3 py-1 text-xs text-slate-400 hover:text-slate-200 transition">
+                      {{ task.name }}
+                    </a>
+                  </li>
+                  {% endfor %}
+                </ul>
+                {% endif %}
               </li>
               {% endfor %}
             </ul>

@@ -23,6 +23,7 @@ from wtforms.validators import Optional, DataRequired
 
 import ambuda.database as db
 import ambuda.queries as q
+import ambuda.data_utils as data_utils
 from ambuda.utils.tei_parser import parse_document
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -130,34 +131,7 @@ def create_model_form(model_class, obj=None):
     return ModelForm(obj=obj) if obj else ModelForm()
 
 
-def upload_xml_text(model_name):
-    def _create_text_from_document(session, slug: str, title: str, document):
-        text = db.Text(slug=slug, title=title, header=document.header)
-        session.add(text)
-        session.flush()
-
-        n = 1
-        for section in document.sections:
-            db_section = db.TextSection(
-                text_id=text.id, slug=section.slug, title=section.slug
-            )
-            session.add(db_section)
-            session.flush()
-
-            for block in section.blocks:
-                db_block = db.TextBlock(
-                    text_id=text.id,
-                    section_id=db_section.id,
-                    slug=block.slug,
-                    xml=block.blob,
-                    n=n,
-                )
-                session.add(db_block)
-                n += 1
-
-        session.commit()
-        return text
-
+def import_text(model_name):
     class UploadTextForm(FlaskForm):
         title = StringField("Title", validators=[DataRequired()])
         slug = StringField("Slug", validators=[DataRequired()])
@@ -191,7 +165,7 @@ def upload_xml_text(model_name):
                 tmp_path = Path(tmp_file.name)
 
             document = parse_document(tmp_path)
-            _create_text_from_document(session, slug, title, document)
+            data_utils.create_text_from_document(session, slug, title, document)
 
             flash(f"Successfully uploaded text '{title}' with slug '{slug}'", "success")
             return redirect(url_for("admin.list_model", model_name=model_name))
@@ -204,7 +178,61 @@ def upload_xml_text(model_name):
                 tmp_path.unlink()
 
     return render_template(
-        "admin/upload-xml.html",
+        "admin/task-import-text.html",
+        model_name=model_name,
+        form=form,
+        model_configs={c.model.__name__: c for c in MODEL_CONFIG},
+        models_by_category=get_models_by_category(),
+    )
+
+
+def import_parse_data(model_name):
+    class UploadParseDataForm(FlaskForm):
+        text_slug = StringField("Text Slug", validators=[DataRequired()])
+        parse_file = FileField("Parse Data File", validators=[FileRequired()])
+
+    form = UploadParseDataForm()
+
+    if form.validate_on_submit():
+        text_slug = form.text_slug.data
+        parse_file = form.parse_file.data
+
+        session = q.get_session()
+        stmt = select(db.Text).filter_by(slug=text_slug)
+        text = session.scalars(stmt).first()
+
+        if not text:
+            flash(f"Text with slug '{text_slug}' not found", "error")
+            return render_template(
+                "admin/upload-parse-data.html",
+                model_name=model_name,
+                form=form,
+                model_configs={c.model.__name__: c for c in MODEL_CONFIG},
+                models_by_category=get_models_by_category(),
+            )
+
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".txt", delete=False
+            ) as tmp_file:
+                parse_file.save(tmp_file)
+                tmp_path = Path(tmp_file.name)
+
+            data_utils.add_parse_data(session, text_slug, tmp_path)
+
+            flash(f"Successfully uploaded parse data for text '{text_slug}'", "success")
+            return redirect(url_for("admin.list_model", model_name=model_name))
+
+        except Exception as e:
+            session.rollback()
+            flash(f"Error uploading parse data: {str(e)}", "error")
+        finally:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
+
+    return render_template(
+        "admin/task-import-parse-data.html",
         model_name=model_name,
         form=form,
         model_configs={c.model.__name__: c for c in MODEL_CONFIG},
@@ -326,10 +354,15 @@ MODEL_CONFIG = [
         category=Category.TEXTS,
         tasks=[
             Task(
-                name="Upload XML",
-                slug="upload-xml",
-                handler=upload_xml_text,
-            )
+                name="Import text",
+                slug="import-text",
+                handler=import_text,
+            ),
+            Task(
+                name="Import parse data",
+                slug="import-parse-data",
+                handler=import_parse_data,
+            ),
         ],
         display_field="slug",
     ),

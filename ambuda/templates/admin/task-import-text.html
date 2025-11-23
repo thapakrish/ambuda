@@ -1,12 +1,12 @@
 {% extends "admin/base.html" %}
 
-{% block title %}Upload XML Text{% endblock %}
+{% block title %}Import Text{% endblock %}
 
 {% block content %}
 <div class="max-w-2xl">
   <div class="mb-6">
-    <h1 class="text-3xl font-bold text-slate-800">Upload XML Text</h1>
-    <p class="text-slate-600 mt-2">Upload a TEI XML document to create a new text with sections and blocks.</p>
+    <h1 class="text-3xl font-bold text-slate-800">Import Text</h1>
+    <p class="text-slate-600 mt-2">Import a TEI XML document to create a new text with sections and blocks.</p>
   </div>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
@@ -62,7 +62,7 @@
 
     <div class="flex gap-3 pt-4 border-t border-slate-200">
       <button type="submit" class="px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 transition">
-        Upload
+        Import
       </button>
       <a href="{{ url_for('admin.list_model', model_name=model_name) }}"
          class="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 transition">
