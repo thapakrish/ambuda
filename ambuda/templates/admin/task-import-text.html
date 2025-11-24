@@ -1,13 +1,13 @@
 {% extends "admin/base.html" %}
-{% from "admin/macros.html" import flash_messages %}
+{% from "admin/macros.html" import flash_messages, file_metadata_script %}
 
-{% block title %}Import Text{% endblock %}
+{% block title %}Import Texts{% endblock %}
 
 {% block content %}
 <div class="max-w-2xl">
   <div class="mb-6">
-    <h1 class="text-3xl font-bold text-slate-800">Import Text</h1>
-    <p class="text-slate-600 mt-2">Import a TEI XML document to create a new text with sections and blocks.</p>
+    <h1 class="text-3xl font-bold text-slate-800">Import Texts</h1>
+    <p class="text-slate-600 mt-2">Import one or more TEI XML documents to create new texts. Each file will create one text.</p>
   </div>
 
   {{ flash_messages() }}
@@ -15,43 +15,20 @@
   <form method="POST" enctype="multipart/form-data" class="bg-white rounded-lg border border-slate-200 p-6">
     {{ form.csrf_token }}
     <div class="mb-4">
-      <label for="{{ form.slug.id }}" class="block text-sm font-semibold text-slate-700 mb-1">
-        {{ form.slug.label.text }}
+      <label for="{{ form.xml_files.id }}" class="block text-sm font-semibold text-slate-700 mb-1">
+        {{ form.xml_files.label.text }}
       </label>
-      {{ form.slug(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500", placeholder="e.g., bhagavad-gita") }}
-      <p class="mt-1 text-xs text-slate-500">A unique identifier for this text (used in URLs)</p>
-      {% if form.slug.errors %}
-        {% for error in form.slug.errors %}
+      {{ form.xml_files(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500", multiple=true) }}
+      <p class="mt-1 text-xs text-slate-500">Select one or more TEI XML files. You can customize the slug and title for each file below.</p>
+      {% if form.xml_files.errors %}
+        {% for error in form.xml_files.errors %}
           <p class="mt-1 text-sm text-red-600">{{ error }}</p>
         {% endfor %}
       {% endif %}
     </div>
 
-    <div class="mb-4">
-      <label for="{{ form.title.id }}" class="block text-sm font-semibold text-slate-700 mb-1">
-        {{ form.title.label.text }}
-      </label>
-      {{ form.title(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500", placeholder="e.g., Bhagavad Gītā") }}
-      <p class="mt-1 text-xs text-slate-500">The display title for this text</p>
-      {% if form.title.errors %}
-        {% for error in form.title.errors %}
-          <p class="mt-1 text-sm text-red-600">{{ error }}</p>
-        {% endfor %}
-      {% endif %}
-    </div>
-
-    <div class="mb-4">
-      <label for="{{ form.xml_file.id }}" class="block text-sm font-semibold text-slate-700 mb-1">
-        {{ form.xml_file.label.text }}
-      </label>
-      {{ form.xml_file(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500") }}
-      <p class="mt-1 text-xs text-slate-500">A TEI XML document containing the text content</p>
-      {% if form.xml_file.errors %}
-        {% for error in form.xml_file.errors %}
-          <p class="mt-1 text-sm text-red-600">{{ error }}</p>
-        {% endfor %}
-      {% endif %}
-    </div>
+    <!-- Dynamic fields for each selected file -->
+    <div id="file-metadata-container" class="hidden mb-4 space-y-4"></div>
 
     <div class="flex gap-3 pt-4 border-t border-slate-200">
       <button type="submit" class="px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 transition">
@@ -63,5 +40,15 @@
       </a>
     </div>
   </form>
+
+  <div class="mt-6 bg-slate-50 rounded-lg border border-slate-200 p-6">
+    <h2 class="text-lg font-semibold text-slate-800 mb-2">Important Notes</h2>
+    <ul class="list-disc list-inside space-y-1 text-sm text-slate-600">
+      <li>Each XML file should contain one complete TEI document.</li>
+      <li>Files will be skipped if a text with the same slug already exists.</li>
+    </ul>
+  </div>
 </div>
+
+{{ file_metadata_script(form.xml_files.id) }}
 {% endblock %}

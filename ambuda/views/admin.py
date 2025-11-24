@@ -1,13 +1,24 @@
+import json
+import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
-import tempfile
 
-from flask import Blueprint, render_template, abort, request, redirect, url_for, flash
+from flask import (
+    Blueprint,
+    render_template,
+    abort,
+    request,
+    redirect,
+    url_for,
+    flash,
+    jsonify,
+    make_response,
+)
 from flask_login import current_user
 from flask_wtf import FlaskForm
-from flask_wtf.file import FileField, FileRequired
+from flask_wtf.file import FileField, FileRequired, MultipleFileField
 from sqlalchemy import inspect, Text, JSON
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms import (
@@ -148,49 +159,77 @@ def create_model_form(model_class, obj=None):
 
 def import_text(model_name):
     class UploadTextForm(FlaskForm):
-        title = StringField("Title", validators=[DataRequired()])
-        slug = StringField("Slug", validators=[DataRequired()])
-        xml_file = FileField("XML File", validators=[FileRequired()])
+        xml_files = MultipleFileField("XML Files", validators=[FileRequired()])
 
     form = UploadTextForm()
 
     if form.validate_on_submit():
-        slug = form.slug.data
-        title = form.title.data
-        xml_file = form.xml_file.data
-
+        xml_files = form.xml_files.data
         session = q.get_session()
-        stmt = select(db.Text).filter_by(slug=slug)
-        if session.scalars(stmt).first():
-            flash(f"A text with slug '{slug}' already exists", "error")
-            return render_template(
-                "admin/upload-xml.html",
-                model_name=model_name,
-                form=form,
-                model_configs={c.model.__name__: c for c in MODEL_CONFIG},
-                models_by_category=get_models_by_category(),
+
+        success_count = 0
+        error_count = 0
+        errors = []
+
+        for index, xml_file in enumerate(xml_files):
+            filename = xml_file.filename
+            if not filename.endswith(".xml"):
+                errors.append(f"{filename}: Must be an XML file")
+                error_count += 1
+                continue
+
+            # Get slug and title from form data
+            slug = request.form.get(f"slug_{index}", "").strip()
+            title = request.form.get(f"title_{index}", "").strip()
+
+            # Validate that slug and title are provided
+            if not slug:
+                errors.append(f"{filename}: Slug is required")
+                error_count += 1
+                continue
+            if not title:
+                errors.append(f"{filename}: Title is required")
+                error_count += 1
+                continue
+
+            # Check if text already exists
+            stmt = select(db.Text).filter_by(slug=slug)
+            if session.scalars(stmt).first():
+                errors.append(f"{filename}: A text with slug '{slug}' already exists")
+                error_count += 1
+                continue
+
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="wb", suffix=".xml", delete=False
+                ) as tmp_file:
+                    xml_file.save(tmp_file)
+                    tmp_path = Path(tmp_file.name)
+
+                document = parse_document(tmp_path)
+                data_utils.create_text_from_document(session, slug, title, document)
+                success_count += 1
+
+            except Exception as e:
+                session.rollback()
+                errors.append(f"{filename}: {str(e)}")
+                error_count += 1
+            finally:
+                if tmp_path and tmp_path.exists():
+                    tmp_path.unlink()
+
+        # Display summary
+        if success_count > 0:
+            flash(f"Successfully uploaded {success_count} text(s)", "success")
+        if error_count > 0:
+            flash(
+                f"{error_count} error(s): {'; '.join(errors[:5])}{'...' if len(errors) > 5 else ''}",
+                "error",
             )
 
-        tmp_path = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="wb", suffix=".xml", delete=False
-            ) as tmp_file:
-                xml_file.save(tmp_file)
-                tmp_path = Path(tmp_file.name)
-
-            document = parse_document(tmp_path)
-            data_utils.create_text_from_document(session, slug, title, document)
-
-            flash(f"Successfully uploaded text '{title}' with slug '{slug}'", "success")
+        if success_count > 0 or error_count > 0:
             return redirect(url_for("admin.list_model", model_name=model_name))
-
-        except Exception as e:
-            session.rollback()
-            flash(f"Error uploading XML: {str(e)}", "error")
-        finally:
-            if tmp_path and tmp_path.exists():
-                tmp_path.unlink()
 
     return render_template(
         "admin/task-import-text.html",
@@ -203,48 +242,70 @@ def import_text(model_name):
 
 def import_parse_data(model_name):
     class UploadParseDataForm(FlaskForm):
-        text_slug = StringField("Text Slug", validators=[DataRequired()])
-        parse_file = FileField("Parse Data File", validators=[FileRequired()])
+        parse_files = MultipleFileField("Parse Data Files", validators=[FileRequired()])
 
     form = UploadParseDataForm()
 
     if form.validate_on_submit():
-        text_slug = form.text_slug.data
-        parse_file = form.parse_file.data
-
+        parse_files = form.parse_files.data
         session = q.get_session()
-        stmt = select(db.Text).filter_by(slug=text_slug)
-        text = session.scalars(stmt).first()
 
-        if not text:
-            flash(f"Text with slug '{text_slug}' not found", "error")
-            return render_template(
-                "admin/upload-parse-data.html",
-                model_name=model_name,
-                form=form,
-                model_configs={c.model.__name__: c for c in MODEL_CONFIG},
-                models_by_category=get_models_by_category(),
+        success_count = 0
+        error_count = 0
+        errors = []
+
+        for parse_file in parse_files:
+            # Derive text slug from filename (e.g., "bhagavad-gita.txt" -> "bhagavad-gita")
+            filename = parse_file.filename
+            if not filename.endswith(".txt"):
+                errors.append(f"{filename}: Must be a .txt file")
+                error_count += 1
+                continue
+
+            text_slug = filename[:-4]  # Remove .txt extension
+
+            # Check if text exists
+            stmt = select(db.Text).filter_by(slug=text_slug)
+            text = session.scalars(stmt).first()
+
+            if not text:
+                errors.append(f"{filename}: Text with slug '{text_slug}' not found")
+                error_count += 1
+                continue
+
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="wb", suffix=".txt", delete=False
+                ) as tmp_file:
+                    parse_file.save(tmp_file)
+                    tmp_path = Path(tmp_file.name)
+
+                data_utils.add_parse_data(session, text_slug, tmp_path)
+                success_count += 1
+
+            except Exception as e:
+                session.rollback()
+                errors.append(f"{filename}: {str(e)}")
+                error_count += 1
+            finally:
+                if tmp_path and tmp_path.exists():
+                    tmp_path.unlink()
+
+        # Display summary
+        if success_count > 0:
+            flash(
+                f"Successfully uploaded parse data for {success_count} text(s)",
+                "success",
+            )
+        if error_count > 0:
+            flash(
+                f"{error_count} error(s): {'; '.join(errors[:5])}{'...' if len(errors) > 5 else ''}",
+                "error",
             )
 
-        tmp_path = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="wb", suffix=".txt", delete=False
-            ) as tmp_file:
-                parse_file.save(tmp_file)
-                tmp_path = Path(tmp_file.name)
-
-            data_utils.add_parse_data(session, text_slug, tmp_path)
-
-            flash(f"Successfully uploaded parse data for text '{text_slug}'", "success")
+        if success_count > 0 or error_count > 0:
             return redirect(url_for("admin.list_model", model_name=model_name))
-
-        except Exception as e:
-            session.rollback()
-            flash(f"Error uploading parse data: {str(e)}", "error")
-        finally:
-            if tmp_path and tmp_path.exists():
-                tmp_path.unlink()
 
     return render_template(
         "admin/task-import-parse-data.html",
@@ -312,6 +373,171 @@ def add_genre_to_texts(model_name):
     )
 
 
+def import_metadata(model_name):
+    """Import text metadata from a JSON file."""
+
+    class UploadMetadataForm(FlaskForm):
+        json_file = FileField("JSON File", validators=[FileRequired()])
+
+    form = UploadMetadataForm()
+
+    if form.validate_on_submit():
+        json_file = form.json_file.data
+
+        session = q.get_session()
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".json", delete=False
+            ) as tmp_file:
+                json_file.save(tmp_file)
+                tmp_path = Path(tmp_file.name)
+
+            updated_count, not_found_slugs = data_utils.import_text_metadata(
+                session, tmp_path
+            )
+
+            if not_found_slugs:
+                flash(
+                    f"Updated {updated_count} text(s). Warning: {len(not_found_slugs)} slug(s) not found: {', '.join(not_found_slugs[:5])}{'...' if len(not_found_slugs) > 5 else ''}",
+                    "warning",
+                )
+            else:
+                flash(f"Successfully updated {updated_count} text(s)", "success")
+
+            return redirect(url_for("admin.list_model", model_name=model_name))
+
+        except Exception as e:
+            session.rollback()
+            flash(f"Error importing metadata: {str(e)}", "error")
+        finally:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
+
+    return render_template(
+        "admin/task-import-metadata.html",
+        model_name=model_name,
+        form=form,
+        model_configs={c.model.__name__: c for c in MODEL_CONFIG},
+        models_by_category=get_models_by_category(),
+    )
+
+
+def export_metadata(model_name):
+    """Export Text metadata as JSON."""
+    session = q.get_session()
+
+    texts = session.query(db.Text).all()
+    export_data = []
+    for text in texts:
+        text_dict = {
+            "slug": text.slug,
+            "title": text.title,
+            "header": text.header,
+            "config": json.loads(text.config) if text.config else None,
+            "genre": text.genre.name if text.genre else None,
+        }
+        export_data.append(text_dict)
+
+    response = make_response(jsonify(export_data))
+    response.headers["Content-Disposition"] = "attachment; filename=texts_metadata.json"
+    response.headers["Content-Type"] = "application/json"
+
+    return response
+
+
+def import_dictionaries(model_name):
+    """Import dictionaries from XML files."""
+
+    class UploadDictionaryForm(FlaskForm):
+        xml_files = MultipleFileField("XML Files", validators=[FileRequired()])
+
+    form = UploadDictionaryForm()
+
+    if form.validate_on_submit():
+        xml_files = form.xml_files.data
+        session = q.get_session()
+
+        success_count = 0
+        error_count = 0
+        errors = []
+        total_entries = 0
+
+        for index, xml_file in enumerate(xml_files):
+            filename = xml_file.filename
+            if not filename.endswith(".xml"):
+                errors.append(f"{filename}: Must be an XML file")
+                error_count += 1
+                continue
+
+            slug = request.form.get(f"slug_{index}", "").strip()
+            title = request.form.get(f"title_{index}", "").strip()
+
+            if not slug:
+                errors.append(f"{filename}: Slug is required")
+                error_count += 1
+                continue
+            if not title:
+                errors.append(f"{filename}: Title is required")
+                error_count += 1
+                continue
+
+            session = q.get_session()
+            stmt = select(db.Dictionary).filter_by(slug=slug)
+            dictionary = session.scalars(stmt).first()
+            if dictionary:
+                errors.append(
+                    f"{filename}: A dictionary with slug '{slug}' already exists"
+                )
+                error_count += 1
+                continue
+
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="wb", suffix=".xml", delete=False
+                ) as tmp_file:
+                    xml_file.save(tmp_file)
+                    tmp_path = Path(tmp_file.name)
+
+                entry_count = data_utils.import_dictionary_from_xml(
+                    slug=slug, title=title, path=tmp_path
+                )
+                total_entries += entry_count
+                success_count += 1
+
+            except Exception as e:
+                session.rollback()
+                errors.append(f"{filename}: {str(e)}")
+                error_count += 1
+            finally:
+                if tmp_path and tmp_path.exists():
+                    tmp_path.unlink()
+
+        # Display summary
+        if success_count > 0:
+            flash(
+                f"Successfully imported {success_count} dictionar{'ies' if success_count > 1 else 'y'} ({total_entries} entries)",
+                "success",
+            )
+        if error_count > 0:
+            flash(
+                f"{error_count} error(s): {'; '.join(errors[:5])}{'...' if len(errors) > 5 else ''}",
+                "error",
+            )
+
+        if success_count > 0 or error_count > 0:
+            return redirect(url_for("admin.list_model", model_name=model_name))
+
+    return render_template(
+        "admin/task-import-dictionary.html",
+        model_name=model_name,
+        form=form,
+        model_configs={c.model.__name__: c for c in MODEL_CONFIG},
+        models_by_category=get_models_by_category(),
+    )
+
+
 @dataclass
 class ModelConfig:
     #: The model name.
@@ -358,7 +584,13 @@ MODEL_CONFIG = [
         model=db.Dictionary,
         list_columns=["id", "slug", "title"],
         category=Category.DICTIONARIES,
-        tasks=[],
+        tasks=[
+            Task(
+                name="Import dictionaries",
+                slug="import-dictionaries",
+                handler=import_dictionaries,
+            ),
+        ],
         display_field="slug",
     ),
     ModelConfig(
@@ -426,7 +658,7 @@ MODEL_CONFIG = [
         category=Category.TEXTS,
         tasks=[
             Task(
-                name="Import text",
+                name="Import texts",
                 slug="import-text",
                 handler=import_text,
             ),
@@ -439,6 +671,16 @@ MODEL_CONFIG = [
                 name="Add genre",
                 slug="add-genre",
                 handler=add_genre_to_texts,
+            ),
+            Task(
+                name="Export metadata",
+                slug="export-metadata",
+                handler=export_metadata,
+            ),
+            Task(
+                name="Import metadata",
+                slug="import-metadata",
+                handler=import_metadata,
             ),
         ],
         display_field="slug",

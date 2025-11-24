@@ -1,45 +1,38 @@
 {% extends "admin/base.html" %}
+{% from "admin/macros.html" import flash_messages, file_metadata_script %}
 
-{% block title %}Upload Dictionary{% endblock %}
+{% block title %}Import Dictionaries{% endblock %}
 
 {% block content %}
 <div class="max-w-2xl">
   <div class="mb-6">
-    <h1 class="text-3xl font-bold text-slate-800">Upload Dictionary</h1>
-    <p class="text-slate-600 mt-1">Upload a dictionary file to import entries</p>
+    <h1 class="text-3xl font-bold text-slate-800">Import Dictionaries</h1>
+    <p class="text-slate-600 mt-2">Import dictionary entries from one or more XML files. Each file will create one dictionary.</p>
   </div>
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for category, message in messages %}
-        <div class="mb-4 p-4 rounded {% if category == 'success' %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
-          {{ message }}
-        </div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
+  {{ flash_messages() }}
 
   <form method="POST" enctype="multipart/form-data" class="bg-white rounded-lg border border-slate-200 p-6">
+    {{ form.csrf_token }}
     <div class="mb-4">
-      <label for="file" class="block text-sm font-semibold text-slate-700 mb-2">
-        Dictionary File
+      <label for="{{ form.xml_files.id }}" class="block text-sm font-semibold text-slate-700 mb-1">
+        {{ form.xml_files.label.text }}
       </label>
-      <input type="file"
-             name="file"
-             id="file"
-             class="block w-full text-sm text-slate-500
-                    file:mr-4 file:py-2 file:px-4
-                    file:rounded file:border-0
-                    file:text-sm file:font-semibold
-                    file:bg-sky-50 file:text-sky-700
-                    hover:file:bg-sky-100"
-             required>
-      <p class="mt-2 text-sm text-slate-500">Upload a CSV, JSON, or XML file</p>
+      {{ form.xml_files(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500", multiple=true) }}
+      <p class="mt-1 text-xs text-slate-500">Select one or more XML files. You can customize the slug and title for each dictionary below. Format: &lt;dictionary&gt;&lt;entry&gt;&lt;key&gt;...&lt;/key&gt;&lt;value&gt;...&lt;/value&gt;&lt;/entry&gt;...&lt;/dictionary&gt;</p>
+      {% if form.xml_files.errors %}
+        {% for error in form.xml_files.errors %}
+          <p class="mt-1 text-sm text-red-600">{{ error }}</p>
+        {% endfor %}
+      {% endif %}
     </div>
+
+    <!-- Dynamic fields for each selected file -->
+    <div id="file-metadata-container" class="hidden mb-4 space-y-4"></div>
 
     <div class="flex gap-3 pt-4 border-t border-slate-200">
       <button type="submit" class="px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 transition">
-        Upload File
+        Import
       </button>
       <a href="{{ url_for('admin.list_model', model_name=model_name) }}"
          class="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 transition">
@@ -49,13 +42,13 @@
   </form>
 
   <div class="mt-6 bg-slate-50 rounded-lg border border-slate-200 p-6">
-    <h2 class="text-lg font-semibold text-slate-800 mb-2">Instructions</h2>
+    <h2 class="text-lg font-semibold text-slate-800 mb-2">Important Notes</h2>
     <ul class="list-disc list-inside space-y-1 text-sm text-slate-600">
-      <li>Supported formats: CSV, JSON, XML</li>
-      <li>Maximum file size: 10MB</li>
-      <li>The file will be validated before import</li>
-      <li>Existing entries with the same slug will be skipped</li>
+      <li>Files will be skipped if a dictionary with the same slug already exists.</li>
+      <li>Each XML file should have the format: &lt;dictionary&gt;&lt;entry&gt;&lt;key&gt;...&lt;/key&gt;&lt;value&gt;...&lt;/value&gt;&lt;/entry&gt;...&lt;/dictionary&gt;.</li>
     </ul>
   </div>
 </div>
+
+{{ file_metadata_script(form.xml_files.id, 'Dictionary Slug', 'Dictionary Title') }}
 {% endblock %}
