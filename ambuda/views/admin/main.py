@@ -156,9 +156,20 @@ MODEL_CONFIG = [
     ),
     ModelConfig(
         model=db.Project,
-        list_columns=["id", "slug", "display_title", "status", "creator_id"],
+        list_columns=["id", "slug", "display_title", "creator_id"],
         category=Category.PROOFING,
-        tasks=[],
+        tasks=[
+            Task(
+                name="Import projects",
+                slug="import-projects",
+                handler=tasks.import_projects,
+            ),
+            Task(
+                name="Export projects",
+                slug="export-projects",
+                handler=tasks.export_projects,
+            ),
+        ],
         display_field="slug",
     ),
     ModelConfig(
@@ -425,18 +436,18 @@ def check_access():
         if not current_user.is_moderator:
             abort(404)
         return
+    else:
+        model_name = request.view_args.get("model_name") if request.view_args else None
+        if not model_name:
+            abort(404)
 
-    model_name = request.view_args.get("model_name") if request.view_args else None
-    if not model_name:
-        abort(404)
-    config = get_model_config(model_name)
-    if not config:
-        abort(404)
-
-    if config.permission == "admin" and not current_user.is_admin:
-        abort(404)
-    if config.permission == "moderator" and not current_user.is_moderator:
-        abort(404)
+        config = get_model_config(model_name)
+        if not config:
+            abort(404)
+        if config.permission == "admin" and not current_user.is_admin:
+            abort(404)
+        if config.permission == "moderator" and not current_user.is_moderator:
+            abort(404)
 
 
 @bp.route("/")

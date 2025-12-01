@@ -406,3 +406,164 @@ def import_dictionaries(model_name):
         form=form,
         **get_model_configs_context(),
     )
+
+
+def serialize(obj, exclude=None) -> dict:
+    if exclude is None:
+        exclude = set()
+
+    mapper = inspect(obj.__class__)
+    result = {}
+    for column in mapper.columns:
+        if column.name in exclude:
+            continue
+        value = getattr(obj, column.name)
+        if isinstance(value, datetime):
+            result[column.name] = value.isoformat()
+        else:
+            result[column.name] = value
+    return result
+
+
+def deserialize(data: dict, model_class):
+    obj = model_class()
+    mapper = inspect(model_class)
+    for column in mapper.columns:
+        # To avoid collisions with prod data.
+        if column.primary_key:
+            continue
+
+        if column.name in data:
+            value = data[column.name]
+            if isinstance(column.type, DateTime) and value is not None:
+                if isinstance(value, str):
+                    value = datetime.fromisoformat(value)
+            setattr(obj, column.name, value)
+    return obj
+
+
+def export_projects(model_name):
+    session = q.get_session()
+    projects = session.query(db.Project).all()
+
+    export_data = {"projects": []}
+    for project in projects:
+        project_dict = serialize(
+            project, exclude={"id", "creator_id", "board_id", "genre_id"}
+        )
+        project_dict["pages"] = []
+
+        for page in project.pages:
+            page_dict = serialize(page, exclude={"id", "status_id"})
+            page_dict["revisions"] = []
+
+            for revision in page.revisions:
+                revision_dict = serialize(
+                    revision, exclude={"id", "author_id", "status_id"}
+                )
+                page_dict["revisions"].append(revision_dict)
+
+            project_dict["pages"].append(page_dict)
+
+        export_data["projects"].append(project_dict)
+
+    response = make_response(jsonify(export_data))
+    response.headers["Content-Disposition"] = (
+        "attachment; filename=projects_export.json"
+    )
+    response.headers["Content-Type"] = "application/json"
+    return response
+
+
+def import_projects(model_name):
+    class UploadProjectsForm(FlaskForm):
+        json_file = FileField("JSON File", validators=[FileRequired()])
+
+    form = UploadProjectsForm()
+
+    if not form.validate_on_submit():
+        return render_template(
+            "admin/task-import-projects.html",
+            model_name=model_name,
+            form=form,
+            **get_model_configs_context(),
+        )
+
+    json_file = form.json_file.data
+    session = q.get_session()
+
+    try:
+        bot_user = session.query(db.User).filter_by(username="ambuda-bot").first()
+        if not bot_user:
+            flash("Error: ambuda-bot user not found in database", "error")
+            return render_template(
+                "admin/task-import-projects.html",
+                model_name=model_name,
+                form=form,
+                **get_model_configs_context(),
+            )
+
+        # TODO: assign a real status.
+        status = session.query(db.PageStatus).first()
+        if not status:
+            flash("Error: No page status found in database", "error")
+            return render_template(
+                "admin/task-import-projects.html",
+                model_name=model_name,
+                form=form,
+                **get_model_configs_context(),
+            )
+
+        data = json.load(json_file.stream)
+        projects_data = data.get("projects", [])
+
+        success_count = 0
+        for project_data in projects_data:
+            pages_data = project_data.pop("pages", [])
+
+            board = db.Board(title=f"Board for {project_data.get('slug', 'project')}")
+            session.add(board)
+            session.flush()
+
+            project_data["board_id"] = board.id
+            project_data["creator_id"] = bot_user.id
+            project_data["genre_id"] = None
+
+            project = deserialize(project_data, db.Project)
+            session.add(project)
+            session.flush()
+
+            for page_data in pages_data:
+                revisions_data = page_data.pop("revisions", [])
+                page_data["project_id"] = project.id
+                page_data["status_id"] = status.id
+
+                page = deserialize(page_data, db.Page)
+                session.add(page)
+                session.flush()
+
+                for revision_data in revisions_data:
+                    revision_data["project_id"] = project.id
+                    revision_data["page_id"] = page.id
+                    revision_data["author_id"] = bot_user.id
+                    revision_data["status_id"] = status.id
+
+                    revision = deserialize(revision_data, db.Revision)
+                    session.add(revision)
+
+            success_count += 1
+
+        session.commit()
+        flash(f"Successfully imported {success_count} project(s)", "success")
+        return redirect(url_for("admin.list_model", model_name=model_name))
+
+    except Exception as e:
+        session.rollback()
+        flash(f"Error importing projects: {str(e)}", "error")
+
+    return render_template(
+        "admin/task-import-projects.html",
+        model_name=model_name,
+        form=form,
+        **get_model_configs_context(),
+    )
