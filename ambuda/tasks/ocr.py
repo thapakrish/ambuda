@@ -47,9 +47,9 @@ def _run_ocr_for_page_inner(
                 page=page,
                 summary=summary,
                 content=ocr_response.text_content,
-                status=SitePageStatus.R0,
                 version=0,
                 author_id=bot_user.id,
+                status=SitePageStatus.R0,
             )
         except Exception as e:
             raise ValueError(
@@ -100,7 +100,7 @@ def run_ocr_for_project(
         )
         ret = tasks.apply_async()
         # Save the result so that we can poll for it later. If we don't do
-        # this, the result won't be available at all..
+        # this, the result won't be available at all.
         ret.save()
         return ret
     else:

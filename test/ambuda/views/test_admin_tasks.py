@@ -411,7 +411,7 @@ def test_import_projects_and_export_projects(admin_client):
                 "page_id": Any,
                 "author_id": Any,
                 "status_id": Any,
-                "created": Any,
+                "created_at": Any,
                 "summary": "Test summary",
                 "content": "Test content",
             },

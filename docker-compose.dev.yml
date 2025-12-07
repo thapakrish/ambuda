@@ -32,13 +32,19 @@ services:
       - ./scripts:/app/scripts
       - ./tests:/app/tests
       - ./test:/app/test
+      # Dependency configs
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./uv.lock:/app/uv.lock
+      - ./tailwind.config.js:/app/tailwind.config.js
       # Data
       - ./data:/app/data
       # Mount node_modules as volume for performance
       - node_modules:/app/node_modules
     ports:
       - "5000:5000"
-    env_file: .env.docker
+    env_file:
+      - .env.docker
+      - .env.docker.local
     depends_on:
       redis:
         condition: service_healthy
@@ -58,9 +64,14 @@ services:
       - ./config.py:/app/config.py
       - ./cli.py:/app/cli.py
       - ./scripts:/app/scripts
+      # Dependency configs
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./uv.lock:/app/uv.lock
       # Data
       - ./data:/app/data
-    env_file: .env.docker
+    env_file:
+      - .env.docker
+      - .env.docker.local
     depends_on:
       redis:
         condition: service_healthy

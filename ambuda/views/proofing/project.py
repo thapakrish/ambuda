@@ -1,3 +1,5 @@
+import dataclasses as dc
+import json
 import logging
 import re
 
@@ -15,6 +17,7 @@ from flask_babel import lazy_gettext as _l
 from flask_login import current_user, login_required
 from flask_wtf import FlaskForm
 from markupsafe import Markup, escape
+from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import orm, select
 from werkzeug.exceptions import abort
 from werkzeug.utils import redirect
@@ -34,14 +37,46 @@ from wtforms_sqlalchemy.fields import QuerySelectField
 from ambuda import database as db
 from ambuda import queries as q
 from ambuda.tasks import app as celery_app
+from ambuda.tasks import llm_structuring as llm_structuring_tasks
 from ambuda.tasks import ocr as ocr_tasks
-from ambuda.utils import project_utils, proofing_utils
+from ambuda.utils import project_utils, proofing_utils, structuring
+from ambuda.utils.structuring import Block, StructuredPage
 from ambuda.utils.revisions import add_revision
 from ambuda.views.proofing.decorators import moderator_required, p2_required
 from ambuda.views.proofing.stats import calculate_stats
 
 bp = Blueprint("project", __name__)
 LOG = logging.getLogger(__name__)
+
+
+@dc.dataclass
+class BlockType:
+    tag: str
+    label: str
+
+
+@dc.dataclass
+class Language:
+    code: str
+    label: str
+
+
+BLOCK_TYPES = [
+    BlockType("p", "paragraph"),
+    BlockType("verse", "verse"),
+    BlockType("heading", "heading"),
+    BlockType("title", "title"),
+    BlockType("subtitle", "subtitle"),
+    BlockType("footnote", "footnote"),
+    BlockType("trailer", "trailer"),
+    BlockType("ignore", "ignore"),
+]
+
+LANGUAGES = [
+    Language(code="sa", label="Sanskrit"),
+    Language(code="hi", label="Hindi"),
+    Language(code="en", label="English"),
+]
 
 
 def _is_valid_page_number_spec(_, field):
@@ -188,7 +223,7 @@ def summary(slug):
     stmt = (
         select(db.Revision)
         .filter_by(project_id=project_.id)
-        .order_by(db.Revision.created.desc())
+        .order_by(db.Revision.created_at.desc())
         .limit(10)
     )
     recent_revisions = list(session.scalars(stmt).all())
@@ -215,7 +250,7 @@ def activity(slug):
         select(db.Revision)
         .options(orm.defer(db.Revision.content))
         .filter_by(project_id=project_.id)
-        .order_by(db.Revision.created.desc())
+        .order_by(db.Revision.created_at.desc())
         .limit(100)
     )
     recent_revisions = list(session.scalars(stmt).all())
@@ -639,11 +674,11 @@ def confirm_changes(slug):
                     page=page,
                     summary=new_summary,
                     content=new_content,
-                    status=page.status.name,
                     version=page.version,
                     author_id=current_user.id,
+                    status_id=page.status_id,
                 )
-                LOG.debug(f"{__name__}: New reviion > {page_slug}: {new_revision}")
+                LOG.debug(f"{__name__}: New revision > {page_slug}: {new_revision}")
 
         flash("Changes applied.", "success")
         return redirect(url_for("proofing.project.activity", slug=slug))
@@ -720,6 +755,250 @@ def batch_ocr_status(task_id):
 
     return render_template(
         "include/ocr-progress.html",
+        **data,
+    )
+
+
+class BlockDiff(BaseModel):
+    type: str
+    content: str | None = None
+    text: str | None = None
+    n: str | None = None
+    lang: str | None = None
+    mark: str | None = None
+    merge_next: bool = False
+
+
+class PageDiff(BaseModel):
+    slug: str
+    blocks: list[BlockDiff]
+
+
+class ProjectDiff(BaseModel):
+    project: str
+    pages: list[PageDiff]
+
+
+@bp.route("/<slug>/batch-structuring", methods=["GET", "POST"])
+@p2_required
+def batch_structuring(slug):
+    project_ = q.project(slug)
+    if project_ is None:
+        abort(404)
+
+    if request.method == "POST":
+        # Get JSON data from form field
+        structure_data = request.form.get("structure_data")
+        if not structure_data:
+            flash("No structure data provided", "error")
+            return redirect(url_for("proofing.project.batch_structuring", slug=slug))
+
+        try:
+            data = json.loads(structure_data)
+        except json.JSONDecodeError:
+            flash("Invalid structure data format", "error")
+            return redirect(url_for("proofing.project.batch_structuring", slug=slug))
+
+        if not data or "pages" not in data:
+            flash("Invalid data format: missing pages", "error")
+            return redirect(url_for("proofing.project.batch_structuring", slug=slug))
+
+        project_diff = ProjectDiff.model_validate(data)
+
+        changed_pages = []
+        unchanged_pages = []
+        errors = []
+
+        page_slugs = []
+        for p in project_diff.pages:
+            page_slugs.append(p.slug)
+        pages = q.pages_with_revisions(project_.id, page_slugs)
+        page_map = {p.slug: p for p in pages}
+
+        for page_diff in project_diff.pages:
+            page_slug = page_diff.slug
+            if page_slug not in page_map:
+                errors.append(f"Page {page_slug} not found")
+                continue
+
+            page = page_map[page_slug]
+            if not page.revisions:
+                errors.append(f"Page {page_slug} has no revisions.")
+                continue
+
+            latest_revision = page.revisions[-1]
+            old_content = latest_revision.content
+            old_structured_page = StructuredPage.from_string(old_content)
+
+            new_blocks = []
+            had_parse_error = False
+            num_diffs_with_content_override = 0
+            for i, block_data in enumerate(page_diff.blocks):
+                content = block_data.content
+                if content is None:
+                    if i < len(old_structured_page.blocks):
+                        content = old_structured_page.blocks[i].content
+                    else:
+                        content = ""
+                else:
+                    num_diffs_with_content_override += 1
+
+                try:
+                    new_block = Block(
+                        type=block_data.type,
+                        content=content,
+                        lang=block_data.lang,
+                        text=block_data.text,
+                        n=block_data.n,
+                        mark=block_data.mark,
+                        merge_next=block_data.merge_next,
+                    )
+                except KeyError as e:
+                    errors.append(f"Could not parse data for {page_slug}/{i}.")
+                    had_parse_error = True
+                    break
+
+                new_blocks.append(new_block)
+
+            if num_diffs_with_content_override * 10 > len(page_diff.blocks):
+                errors.append("Clearing too many pages, possible bug")
+                continue
+
+            if had_parse_error:
+                errors.append(f"Could not parse edits for {page_slug}.")
+                continue
+
+            new_structured_page = StructuredPage(blocks=new_blocks)
+            new_content = new_structured_page.to_xml_string()
+            if old_content == new_content:
+                unchanged_pages.append(page_slug)
+                continue
+
+            try:
+                add_revision(
+                    page=page,
+                    summary="Batch structuring",
+                    content=new_content,
+                    version=page.version,
+                    author_id=current_user.id,
+                    status_id=page.status_id,
+                )
+                changed_pages.append(page_slug)
+            except Exception as e:
+                errors.append(f"Failed to save page {page_slug}: {str(e)}")
+                LOG.error(f"Failed to save batch structuring for {page_slug}: {e}")
+
+        _plural = lambda n: "s" if n > 1 else ""
+
+        message_parts = []
+        if changed_pages:
+            message_parts.append(
+                f"Saved {len(changed_pages)} changed page{_plural(len(changed_pages))}"
+            )
+        if unchanged_pages:
+            message_parts.append(f"{len(unchanged_pages)} unchanged")
+        if not changed_pages and not unchanged_pages:
+            message_parts.append("No pages to save")
+
+        message = ", ".join(message_parts) + "."
+        if errors:
+            message += f" ({len(errors)} error{_plural(len(errors))})"
+            flash(message, "warning")
+        elif len(changed_pages) > 0:
+            flash(message, "success")
+        else:
+            flash(message, "info")
+
+        return redirect(url_for("proofing.project.summary", slug=slug))
+
+    pages_with_content = []
+    for page in project_.pages:
+        if page.revisions:
+            latest_revision = page.revisions[-1]
+            structured_data = StructuredPage.from_string(latest_revision.content)
+
+            pages_with_content.append(
+                {
+                    "slug": page.slug,
+                    "blocks": structured_data.blocks,
+                }
+            )
+
+    return render_template(
+        "proofing/projects/batch-structuring.html",
+        project=project_,
+        pages_with_content=pages_with_content,
+        block_types=BLOCK_TYPES,
+        languages=LANGUAGES,
+    )
+
+
+@bp.route("/<slug>/batch-llm-structuring", methods=["GET", "POST"])
+@moderator_required
+def batch_llm_structuring(slug):
+    project_ = q.project(slug)
+    if project_ is None:
+        abort(404)
+
+    if request.method == "POST":
+        task = llm_structuring_tasks.run_structuring_for_project(
+            app_env=current_app.config["AMBUDA_ENVIRONMENT"],
+            project=project_,
+        )
+        if task:
+            return render_template(
+                "proofing/projects/batch-llm-structuring-post.html",
+                project=project_,
+                status="PENDING",
+                current=0,
+                total=0,
+                percent=0,
+                task_id=task.id,
+            )
+        else:
+            flash(_l("No edited pages found in this project."))
+
+    return render_template(
+        "proofing/projects/batch-llm-structuring.html",
+        project=project_,
+    )
+
+
+@bp.route("/batch-llm-structuring-status/<task_id>")
+def batch_llm_structuring_status(task_id):
+    r = GroupResult.restore(task_id, app=celery_app)
+    assert r, task_id
+
+    if r.results:
+        current = r.completed_count()
+        total = len(r.results)
+        percent = current / total
+
+        status = None
+        if total:
+            if current == total:
+                status = "SUCCESS"
+            else:
+                status = "PROGRESS"
+        else:
+            status = "FAILURE"
+
+        data = {
+            "status": status,
+            "current": current,
+            "total": total,
+            "percent": percent,
+        }
+    else:
+        data = {
+            "status": "PENDING",
+            "current": 0,
+            "total": 0,
+            "percent": 0,
+        }
+
+    return render_template(
+        "include/llm-structuring-progress.html",
         **data,
     )
 

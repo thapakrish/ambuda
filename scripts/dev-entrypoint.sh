@@ -39,10 +39,19 @@ fi
 # File uploads
 mkdir -p /app/data/file-uploads
 
+# Ensure Python dependencies are up to date
+echo "- Checking Python dependencies..."
+uv sync
+
+# Ensure npm dependencies are up to date
+echo "- Checking npm dependencies..."
+npm install --silent
+
 # Start Flask with CSS and JS watchers concurrently with hot reloading
+# --poll is needed to watch across the Docker boundary.
 exec ./node_modules/.bin/concurrently \
     --names "FLASK,CSS,JS" \
     --prefix-colors "blue,green,yellow" \
     "uv run flask run -h 0.0.0.0 -p 5000" \
-    "npx tailwindcss -i /app/ambuda/static/css/style.css -o /app/ambuda/static/gen/style.css --watch" \
+    "npx tailwindcss -i /app/ambuda/static/css/style.css -o /app/ambuda/static/gen/style.css --watch --poll" \
     "npx esbuild /app/ambuda/static/js/main.js --outfile=/app/ambuda/static/gen/main.js --bundle --watch"

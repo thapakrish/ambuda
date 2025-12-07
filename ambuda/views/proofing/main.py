@@ -269,7 +269,7 @@ def recent_changes():
             orm.selectinload(db.Revision.status).load_only(db.PageStatus.name),
         )
         .filter(db.Revision.author_id != bot_user.id)
-        .order_by(db.Revision.created.desc())
+        .order_by(db.Revision.created_at.desc())
         .limit(num_per_page)
     )
     recent_revisions = list(session.scalars(stmt).all())
@@ -319,10 +319,10 @@ def dashboard():
     stmt = (
         select(db.Revision)
         .filter(
-            (db.Revision.created >= days_ago_30d) & (db.Revision.author_id != bot_id)
+            (db.Revision.created_at >= days_ago_30d) & (db.Revision.author_id != bot_id)
         )
-        .options(orm.load_only(db.Revision.created, db.Revision.author_id))
-        .order_by(db.Revision.created)
+        .options(orm.load_only(db.Revision.created_at, db.Revision.author_id))
+        .order_by(db.Revision.created_at)
     )
     revisions_30d = list(session.scalars(stmt).all())
     revisions_7d = [x for x in revisions_30d if x.created >= days_ago_7d]

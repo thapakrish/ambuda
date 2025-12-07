@@ -103,6 +103,9 @@ class Project(Base):
         "Page", order_by=lambda: Page.order, backref="project", cascade="delete"
     )
 
+    def __str__(self):
+        return self.slug
+
 
 class Page(Base):
     """A page in a proofreading project.
@@ -143,10 +146,13 @@ class Page(Base):
     #: An ordered list of revisions for this page (oldest first).
     revisions = relationship(
         "Revision",
-        order_by=lambda: Revision.created,
+        order_by=lambda: Revision.created_at,
         backref="page",
         cascade="delete",
     )
+
+    def __str__(self) -> str:
+        return self.slug
 
 
 class PageStatus(Base):
@@ -162,11 +168,14 @@ class PageStatus(Base):
     #: A short human-readable label for this status.
     name = Column(String, nullable=False, unique=True)
 
+    def __str__(self) -> str:
+        return self.name
+
 
 class Revision(Base):
     """A specific page revision.
 
-    To get the latest revision, sort by `created`.
+    To get the latest revision, sort by `created_at`.
     """
 
     __tablename__ = "proof_revisions"
@@ -184,8 +193,7 @@ class Revision(Base):
         Integer, ForeignKey("proof_page_statuses.id"), index=True, nullable=False
     )
     #: Timestamp at which this revision was created.
-    #: FIXME: rename to `created_at` for consistency with other models.
-    created = Column(
+    created_at = Column(
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
     )
     #: An optional editor summary for this revision.
@@ -199,3 +207,7 @@ class Revision(Base):
     project = relationship("Project")
     #: The status of this page.
     status = relationship("PageStatus", backref="revisions")
+
+    @property
+    def created(self):
+        return self.created_at

@@ -1,0 +1,19 @@
+{% extends 'proofing/base-sidebar.html' %}
+{% import "macros/components.html" as mc %}
+{% import "macros/proofing.html" as m %}
+
+{% block title %}{{ mc.title('Published Text') }}{% endblock %}
+
+{% block sidebar %}{{ m.main_nav('projects', current_user=current_user) }}{% endblock %}
+
+{% block content %}
+<div class="prose">
+{% if text %}
+<h1 class="md:!mt-0">{{ project.display_title }}</h1>
+<pre>{{ text }}</pre>
+{% else %}
+<h1 class="md:!mt-0">Project Not Found</h1>
+<p>The requested project could not be found.</p>
+{% endif %}
+</div>
+{% endblock %}

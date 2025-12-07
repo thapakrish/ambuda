@@ -5,7 +5,7 @@ The main route here is `edit`, which defines the page editor and the edit flow.
 
 from dataclasses import dataclass
 
-from flask import Blueprint, current_app, flash, render_template, send_file
+from flask import Blueprint, current_app, flash, render_template, request, send_file
 from flask_babel import lazy_gettext as _l
 from flask_login import current_user, login_required
 from flask_wtf import FlaskForm
@@ -17,10 +17,11 @@ from wtforms.widgets import TextArea
 from ambuda import database as db
 from ambuda import queries as q
 from ambuda.enums import SitePageStatus
-from ambuda.utils import google_ocr, project_utils
+from ambuda.utils import google_ocr, llm_structuring, project_utils, structuring
 from ambuda.utils.assets import get_page_image_filepath
 from ambuda.utils.diff import revision_diff
 from ambuda.utils.revisions import EditError, add_revision
+from ambuda.utils.structuring import StructuredPage
 from ambuda.views.api import bp as api
 from ambuda.views.site import bp as site
 
@@ -283,3 +284,54 @@ def ocr(project_slug, page_slug):
     image_path = get_page_image_filepath(project_slug, page_slug)
     ocr_response = google_ocr.run(image_path)
     return ocr_response.text_content
+
+
+@api.route("/llm-structuring/<project_slug>/<page_slug>/")
+@login_required
+def llm_structuring_api(project_slug, page_slug):
+    project_ = q.project(project_slug)
+    if project_ is None:
+        abort(404)
+
+    page_ = q.page(project_.id, page_slug)
+    if not page_:
+        abort(404)
+
+    content = request.json.get("content", "")
+    if not content:
+        return "Error: No content provided", 400
+
+    try:
+        api_key = current_app.config.get("GEMINI_API_KEY")
+        if not api_key:
+            return "Error: GEMINI_API_KEY not configured", 500
+
+        structured_content = llm_structuring.run(content, api_key)
+        return structured_content
+    except Exception as e:
+        current_app.logger.error(f"LLM structuring failed: {e}")
+        return f"Error: {str(e)}", 500
+
+
+@api.route("/structuring/<project_slug>/<page_slug>/", methods=["POST"])
+@login_required
+def structuring_api(project_slug, page_slug):
+    """Heuristic structuring API (fast, ~free)."""
+    project_ = q.project(project_slug)
+    if project_ is None:
+        abort(404)
+
+    page_ = q.page(project_.id, page_slug)
+    if not page_:
+        abort(404)
+
+    content = request.json.get("content", "")
+    if not content:
+        return "Error: No content provided", 400
+
+    try:
+        structured_data = StructuredPage.from_string(content)
+        return structured_data.to_xml_string()
+    except Exception as e:
+        current_app.logger.error(f"Structuring failed: {e}")
+        return f"Error: {str(e)}", 500

@@ -10,8 +10,15 @@ class EditError(Exception):
     pass
 
 
+# TODO(akp): refactor to use just status_id everywhere.
 def add_revision(
-    page: db.Page, summary: str, content: str, status: str, version: int, author_id: int
+    page: db.Page,
+    summary: str,
+    content: str,
+    version: int,
+    author_id: int,
+    status: str | None = None,
+    status_id: int | None = None,
 ) -> int:
     """Add a new revision for a page."""
     # If this doesn't update any rows, there's an edit conflict.
@@ -21,12 +28,18 @@ def add_revision(
 
     # FIXME: Check for `proofreading` user permission before allowing changes
     session = q.get_session()
-    status_ids = {s.name: s.id for s in q.page_statuses()}
+
+    if status_id is None:
+        if status is None:
+            raise ValueError("Either status or status_id must be provided")
+        status_ids = {s.name: s.id for s in q.page_statuses()}
+        status_id = status_ids[status]
+
     new_version = version + 1
     result = session.execute(
         update(db.Page)
         .where((db.Page.id == page.id) & (db.Page.version == version))
-        .values(version=new_version, status_id=status_ids[status])
+        .values(version=new_version, status_id=status_id)
     )
     session.commit()
 
@@ -44,7 +57,7 @@ def add_revision(
         summary=summary,
         content=content,
         author_id=author_id,
-        status_id=status_ids[status],
+        status_id=status_id,
     )
     session.add(revision_)
     session.commit()

@@ -29,6 +29,7 @@ node_modules/
 
 # Production config
 .env
+.env.docker.local
 production/
 
 # IDE config

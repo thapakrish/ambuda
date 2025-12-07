@@ -159,6 +159,22 @@ Pass `class` explicitly so that Tailwind can regex-find it when it compiles. #}
                   x-text="isRunningOCR ? '{{ _("Running OCR ...") }}' : '{{ _("Run OCR") }}'">
           </button>
         </li>
+        {% if current_user is defined and current_user.is_authenticated and current_user.is_p2 %}
+        <li>
+          <button class="dropdown-item"
+                  @click.prevent="runLLMStructuring"
+                  :disabled="isRunningLLMStructuring"
+                  x-text="isRunningLLMStructuring ? '{{ _("Running LLM Structuring ...") }}' : '{{ _("Run LLM Structuring") }}'">
+          </button>
+        </li>
+        {% endif %}
+        <li>
+          <button class="dropdown-item"
+                  @click.prevent="runStructuring"
+                  :disabled="isRunningStructuring"
+                  x-text="isRunningStructuring ? '{{ _("Running Structuring ...") }}' : '{{ _("Run Structuring") }}'">
+          </button>
+        </li>
         {{ _dropdown_item('replaceColonVisarga', _(': (colon) → ः (visarga)')) }}
         {{ _dropdown_item('replaceSAvagraha', _('S → ऽ (avagraha)')) }}
       </ul>
@@ -237,10 +253,10 @@ Pass `class` explicitly so that Tailwind can regex-find it when it compiles. #}
       {{ alpine_button("A<sup>-</sup>", "decreaseTextSize") }}
     </div>
   </div>
-  <textarea id="content" name="content" required=""
-    class="grow p-2 md:p-4 w-full resize-none"
-    :style="`font-size: ${textZoom}rem`"
-    @keydown="hasUnsavedChanges = true" spellcheck="false">{{ data }}</textarea>
+  <div id="prosemirror-editor"
+    class="grow p-2 md:p-4 w-full overflow-auto prosemirror-editor"
+    :style="`font-size: ${textZoom}rem`"></div>
+  <textarea id="content" name="content" required="" style="display: none;">{{ data }}</textarea>
 </div>
 {% endmacro %}
 

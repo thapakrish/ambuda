@@ -2,6 +2,7 @@
 /* Transcription and proofreading interface. */
 
 import { $ } from './core.ts';
+import { ProofingEditor } from './prosemirror-editor.ts';
 
 const CONFIG_KEY = 'proofing-editor';
 
@@ -57,12 +58,23 @@ export default () => ({
   // Internal-only
   layoutClasses: CLASSES_SIDE_BY_SIDE,
   isRunningOCR: false,
+  isRunningLLMStructuring: false,
+  isRunningStructuring: false,
   hasUnsavedChanges: false,
   imageViewer: null,
+  editor: null,
 
   init() {
     this.loadSettings();
     this.layoutClasses = this.getLayoutClasses();
+
+    // Initialize Prosemirror
+    const editorElement = $('#prosemirror-editor');
+    const initialContent = $('#content').value || '';
+    this.editor = new ProofingEditor(editorElement, initialContent, () => {
+      this.hasUnsavedChanges = true;
+      $('#content').value = this.editor.getText();
+    });
 
     // Set `imageZoom` only after the viewer is fully initialized.
     this.imageViewer = initializeImageViewer(IMAGE_URL);
@@ -97,6 +109,7 @@ export default () => ({
       }
     }
   },
+
   saveSettings() {
     const settings = {
       textZoom: this.textZoom,
@@ -107,6 +120,7 @@ export default () => ({
     };
     localStorage.setItem(CONFIG_KEY, JSON.stringify(settings));
   },
+
   getLayoutClasses() {
     if (this.layout === LAYOUT_TOP_AND_BOTTOM) {
       return CLASSES_TOP_AND_BOTTOM;
@@ -141,9 +155,63 @@ export default () => ({
         }
         return '(server error)';
       });
+    this.editor.setText(content);
     $('#content').value = content;
 
     this.isRunningOCR = false;
+  },
+
+  // Currently disabled.
+  async runLLMStructuring() {
+    this.isRunningLLMStructuring = true;
+
+    const { pathname } = window.location;
+    const url = pathname.replace('/proofing/', '/api/llm-structuring/');
+    const currentContent = this.editor.getText();
+
+    const content = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content: currentContent }),
+    })
+      .then((response) => {
+        if (response.ok) {
+          return response.text();
+        }
+        return '(server error)';
+      });
+    this.editor.setText(content);
+    $('#content').value = content;
+
+    this.isRunningLLMStructuring = false;
+  },
+
+  async runStructuring() {
+    this.isRunningStructuring = true;
+
+    const { pathname } = window.location;
+    const url = pathname.replace('/proofing/', '/api/structuring/');
+
+    const currentContent = this.editor.getText();
+
+    const content = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content: currentContent }),
+    })
+      .then((response) => {
+        if (response.ok) {
+          return response.text();
+        }
+        return '(server error)';
+      });
+    this.editor.setText(content);
+    $('#content').value = content;
+
+    this.isRunningStructuring = false;
   },
 
   // Image zoom controls
@@ -191,19 +259,10 @@ export default () => ({
   // Markup controls
 
   changeSelectedText(callback) {
-    // FIXME: more idiomatic way to get this?
-    const $textarea = $('#content');
-    const start = $textarea.selectionStart;
-    const end = $textarea.selectionEnd;
-    const { value } = $textarea;
-
-    const selectedText = value.substr(start, end - start);
-    const replacement = callback(selectedText);
-    $textarea.value = value.substr(0, start) + replacement + value.substr(end);
-
-    // Update selection state and focus for better UX.
-    $textarea.setSelectionRange(start, start + replacement.length);
-    $textarea.focus();
+    const selection = this.editor.getSelection();
+    const replacement = callback(selection.text);
+    this.editor.replaceSelection(replacement);
+    $('#content').value = this.editor.getText();
   },
   markAsError() {
     this.changeSelectedText((s) => `<error>${s}</error>`);

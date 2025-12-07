@@ -128,6 +128,9 @@ class BaseConfig:
     #: ReCAPTCHA public key.
     RECAPTCHA_PUBLIC_KEY = _env("RECAPTCHA_PUBLIC_KEY")
 
+    #: Google Gemini API key for LLM-based text structuring.
+    GEMINI_API_KEY = _env("GEMINI_API_KEY")
+
     #: ReCAPTCHA private key.
     RECAPTCHA_PRIVATE_KEY = _env("RECAPTCHA_PRIVATE_KEY")
 

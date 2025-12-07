@@ -199,6 +199,16 @@ def create_post(*, board_id: int, thread: db.Thread, user_id: int, content: str)
     session.commit()
 
 
+def pages_with_revisions(project_id, page_slugs: list[str]) -> list[db.Page]:
+    session = get_session()
+    stmt = (
+        select(db.Page)
+        .filter((db.Page.project_id == project_id) & (db.Page.slug.in_(page_slugs)))
+        .options(selectinload(db.Page.revisions))
+    )
+    return session.scalars(stmt).all()
+
+
 def page(project_id, page_slug: str) -> db.Page | None:
     session = get_session()
     stmt = select(db.Page).filter(

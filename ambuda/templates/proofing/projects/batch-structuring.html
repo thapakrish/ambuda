@@ -1,0 +1,465 @@
+{% extends 'proofing/base-sidebar.html' %}
+{% import "macros/components.html" as components %}
+{% import "macros/proofing.html" as m %}
+
+
+{% block title %}Batch Structuring: {{ project.display_title }} | Ambuda{% endblock %}
+
+
+{% block sidebar %}{{ m.main_nav('projects', current_user=current_user) }}{% endblock %}
+
+
+{% block content %}
+{{ components.flash_messages() }}
+
+{{ m.project_header_nested('Batch Structuring', project) }}
+{{ m.project_tabs(project=project, active='edit') }}
+<div x-data="batchStructuring()" class="prose max-w-none">
+  <div class="bg-slate-100 p-4 rounded mb-4 not-prose">
+    <h3 class="font-bold mb-3">Bulk Tools</h3>
+
+    <div class="mb-4 pb-4 border-b border-slate-300">
+      <p class="text-sm mb-2">Assign blocks to text:</p>
+      <div class="flex gap-2 items-center flex-wrap">
+        <span class="text-sm">Assign all</span>
+
+        <select x-model="bulkLang" class="border rounded px-2 py-1 text-sm">
+          <option value="">(any language)</option>
+          {% for language in languages %}
+          <option value="{{ language.code }}">{{ language.label }}</option>
+          {% endfor %}
+        </select>
+
+        <select x-model="bulkType" class="border rounded px-2 py-1 text-sm">
+          <option value="">(any type)</option>
+          {% for block_type in block_types %}
+          <option value="{{ block_type.tag }}">{{ block_type.label }}s</option>
+          {% endfor %}
+        </select>
+
+        <span class="text-sm">to text</span>
+
+        <input type="text"
+               x-model="bulkText"
+               placeholder="text name"
+               class="border rounded px-2 py-1 text-sm w-32">
+        <button @click="bulkAssignText()" class="btn btn-primary text-sm">Apply</button>
+      </div>
+      <p x-show="bulkStatus" x-text="bulkStatus" class="text-sm mt-2 text-slate-700"></p>
+    </div>
+
+    <div class="mb-4 pb-4 border-b border-slate-300">
+      <p class="text-sm mb-2">Filter by text:</p>
+      <div class="flex gap-2 items-center">
+        <select x-model="filterText" class="border rounded px-2 py-1 text-sm">
+          <option value="">show all texts</option>
+          <template x-for="textName in getUniqueTexts()" :key="textName">
+            <option :value="textName" x-text="textName || '(empty)'"></option>
+          </template>
+        </select>
+        <span class="text-sm text-slate-600">
+          <span x-show="filterText !== ''" x-text="'Showing only: ' + (filterText || '(empty)')"></span>
+        </span>
+      </div>
+    </div>
+
+    <div>
+      <p class="text-sm mb-2">Filter by page range:</p>
+      <div class="flex gap-4 items-center">
+        <label class="flex items-center gap-2">
+          <span class="text-sm">From:</span>
+          <input type="number"
+                 x-model.number="startPage"
+                 min="1"
+                 class="border rounded px-2 py-1 w-24">
+        </label>
+        <label class="flex items-center gap-2">
+          <span class="text-sm">To:</span>
+          <input type="number"
+                 x-model.number="endPage"
+                 min="1"
+                 class="border rounded px-2 py-1 w-24">
+        </label>
+        <button @click="resetFilter()" class="btn btn-basic text-sm">Reset</button>
+      </div>
+      <p class="text-sm text-slate-600 mt-2">
+        Showing <span x-text="filteredPages().length"></span> of {{ pages_with_content|length }} pages
+      </p>
+    </div>
+  </div>
+
+  <template x-for="item in filteredPages()" :key="item.slug">
+    <div class="border-t border-slate-200 mt-4 pt-2">
+      <div class="flex items-center gap-2 mb-2">
+        <h2 class="text-xs font-medium text-slate-400" x-text="'Page ' + item.slug"></h2>
+        <label class="flex items-center gap-1 cursor-pointer hover:bg-slate-100 px-1 py-0.5 rounded">
+          <input type="checkbox"
+                 x-model="item.ignorePage"
+                 class="w-3 h-3">
+          <span class="text-xs text-slate-500">Ignore page</span>
+        </label>
+      </div>
+
+      <div class="space-y-3" x-show="!item.ignorePage">
+        <template x-for="(block, index) in item.blocks" :key="index">
+          <div x-show="filterText === '' || (block.text || '') === filterText"
+               class="border-l-4 pl-4 transition-colors"
+               :class="{
+                 'border-blue-400': block.type === 'p',
+                 'border-purple-400': block.type === 'verse',
+                 'border-orange-400': block.type === 'heading',
+                 'border-indigo-400': block.type === 'title',
+                 'border-pink-400': block.type === 'subtitle',
+                 'border-green-400': block.type === 'footnote',
+                 'border-teal-400': block.type === 'trailer',
+                 'border-gray-300': block.type === 'ignore',
+                 'bg-yellow-50 !border-dashed': block.merge_next
+               }">
+            <div class="flex gap-1 mb-1 px-1.5 py-1 text-xs text-slate-500 items-center bg-slate-50 rounded leading-tight">
+              {# block tag #}
+              <select x-model="block.type"
+                      class="border border-slate-300 bg-white text-xs font-medium cursor-pointer hover:bg-slate-100 rounded px-1 py-0">
+                {% for block_type in block_types %}
+                <option value="{{ block_type.tag }}">{{ block_type.label }}</option>
+                {% endfor %}
+              </select>
+
+              <div class="flex items-center gap-0.5">
+                <span class="text-slate-400 text-[11px]">text=</span>
+                <input type="text"
+                       x-model="block.text"
+                       :list="'text-list-' + item.slug"
+                       @change="updateNumbering"
+                       class="border border-slate-300 bg-transparent text-xs text-slate-600 w-20 px-1 py-0 hover:bg-slate-100 rounded"
+                       placeholder="text">
+                <datalist :id="'text-list-' + item.slug">
+                  <template x-for="textName in getUniqueTexts(item)" :key="textName">
+                    <option :value="textName"></option>
+                  </template>
+                </datalist>
+              </div>
+
+              <template x-if="block.type === 'footnote'">
+                <div class="flex items-center gap-0.5">
+                  <span class="text-slate-400 text-[11px]">mark=</span>
+                  <input type="text"
+                         x-model="block.mark"
+                         class="border border-slate-300 bg-transparent font-mono text-xs text-slate-600 w-16 px-1 py-0 hover:bg-slate-100 rounded"
+                         placeholder="mark">
+                </div>
+              </template>
+
+              <template x-if="block.type !== 'footnote'">
+                <div class="flex items-center gap-0.5">
+                  <span class="text-slate-400 text-[11px]">n=</span>
+                  <input type="text"
+                         x-model="block.n"
+                         @change="block.manualNumber = true; propagateNumbering(item, index)"
+                         :class="block.manualNumber ?
+                           'border border-slate-300 bg-amber-200 font-mono text-xs text-slate-800 w-12 px-1 py-0 hover:bg-amber-300 rounded' :
+                           'border border-slate-300 bg-transparent font-mono text-xs text-slate-600 w-12 px-1 py-0 hover:bg-slate-100 rounded'"
+                         placeholder="#">
+                </div>
+              </template>
+
+              <div class="flex items-center gap-0.5">
+                <span class="text-slate-400 text-[11px]">lang=</span>
+                <select x-model="block.lang"
+                        class="border border-slate-300 bg-transparent text-xs cursor-pointer hover:bg-slate-100 rounded px-1 py-0">
+                  {% for language in languages %}
+                  <option value="{{ language.code }}">{{ language.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <label class="flex items-center gap-0.5 cursor-pointer hover:bg-slate-100 px-1 rounded">
+                <input type="checkbox"
+                       x-model="block.merge_next"
+                       @change="updateNumbering"
+                       class="w-3 h-3">
+                <span class="text-[11px]">merge</span>
+              </label>
+            </div>
+            <div class="relative">
+              <textarea x-model="block.content"
+                        @input="onContentChange(block)"
+                        :class="block.contentChanged ?
+                          'w-full text-base p-2 border-2 border-red-300 bg-red-50 rounded font-normal resize-y min-h-[3rem]' :
+                          'w-full text-base p-2 border border-slate-200 bg-white rounded font-normal resize-y min-h-[3rem]'"
+                        :rows="block.content.split('\n').length"></textarea>
+              <button x-show="block.contentChanged"
+                      @click="resetContent(block)"
+                      class="absolute top-2 right-2 px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors">
+                Reset
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  <form method="POST" action="{{ url_for('proofing.project.batch_structuring', slug=project.slug) }}" class="mt-8 border-t border-slate-200 pt-4 not-prose">
+    <input type="hidden" name="structure_data" x-ref="structureData">
+    <div class="flex gap-2 items-center mb-4">
+      <button @click.prevent="submitStructure()"
+              :disabled="isSubmitting"
+              type="submit"
+              class="btn btn-submit"
+              :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }">
+        Structure page
+      </button>
+      <button @click.prevent="previewStructure()" type="button" class="btn btn-basic">
+        Preview JSON
+      </button>
+      <span x-show="structureStatus"
+            x-text="structureStatus"
+            class="text-sm"
+            :class="statusSuccess ? 'text-green-600' : 'text-slate-600'"></span>
+    </div>
+
+    <div x-show="structureJson" class="bg-slate-50 rounded border border-slate-200 p-4">
+      <div class="flex justify-between items-center mb-2">
+        <h4 class="font-bold text-sm">Generated Structure (JSON)</h4>
+        <button @click="copyToClipboard()" type="button" class="btn btn-basic text-xs">Copy to clipboard</button>
+      </div>
+      <pre class="text-xs overflow-auto max-h-96 p-3 rounded border border-slate-300"
+           x-text="structureJson"></pre>
+    </div>
+  </form>
+</div>
+
+<script>
+function batchStructuring() {
+  return {
+    startPage: 1,
+    endPage: {{ pages_with_content|length }},
+    pages: {{ pages_with_content|tojson }},
+
+    init() {
+      this.pages.forEach(page => {
+        page.ignorePage = false;
+        page.blocks.forEach(block => {
+          if (block.type === 'footnote' && !block.mark) {
+            block.mark = '';
+          }
+          block.originalContent = block.content;
+          block.contentChanged = false;
+          if (block.n) {
+            block.manualNumber = true;
+          }
+        });
+      });
+
+      this.updateNumbering();
+    },
+
+    bulkLang: '',
+    bulkType: '',
+    bulkText: '',
+    bulkStatus: '',
+    filterText: '',
+    structureJson: '',
+    structureStatus: '',
+    statusSuccess: false,
+    isSubmitting: false,
+
+    onContentChange(block) {
+      block.contentChanged = block.content !== block.originalContent;
+    },
+
+    resetContent(block) {
+      block.content = block.originalContent;
+      block.contentChanged = false;
+    },
+
+    filteredPages() {
+      return this.pages.filter(item => {
+        const pageNum = parseInt(item.slug);
+        return pageNum >= this.startPage && pageNum <= this.endPage;
+      });
+    },
+
+    resetFilter() {
+      this.startPage = 1;
+      this.endPage = this.pages.length;
+    },
+
+    bulkAssignText() {
+      const targetText = this.bulkText;
+      const lang = this.bulkLang;
+      const type = this.bulkType;
+
+      if (!targetText || targetText.trim() === '') {
+        this.bulkStatus = 'Please enter a text name';
+        return;
+      }
+
+      let count = 0;
+      this.pages.forEach(page => {
+        page.blocks.forEach(block => {
+          const langMatch = !lang || block.lang === lang;
+          const typeMatch = !type || block.type === type;
+
+          if (langMatch && typeMatch) {
+            block.text = targetText.trim();
+            count++;
+          }
+        });
+      });
+
+      this.bulkStatus = `Assigned ${count} blocks to text "${targetText}"`;
+
+      this.pages.forEach(page => {
+        page.blocks.forEach((block, index) => {
+          if (block.manualNumber && block.number && block.number.trim() !== '') {
+            this.propagateNumbering(page, index);
+          }
+        });
+      });
+    },
+
+    getUniqueTexts(page) {
+      const texts = new Set();
+      page.blocks.forEach(block => {
+        if (block.text && block.text.trim() !== '') {
+          texts.add(block.text.trim());
+        }
+      });
+      return Array.from(texts).sort();
+    },
+
+    // Propagate the block number from page.blocks[blockIndex] forward.
+    propagateNumbering(page, blockIndex) {
+      const firstBlock = page.blocks[blockIndex];
+
+      const pageIndex = this.pages.findIndex(p => p.slug === page.slug);
+      if (pageIndex === -1) return;
+
+      const m = firstBlock.n.match(/^(.*?)(\d+)$/);
+      if (!m) return; // No clue how to propagate non-numeric.
+      const prefix = m[1];
+
+      let next = parseInt(m[2]);
+      if (!firstBlock.merge_text) {
+        next += 1;
+      }
+
+      for (let i = pageIndex; i < this.pages.length; i++) {
+        const page = this.pages[i];
+        const start = i === pageIndex ? blockIndex + 1 : 0;
+        for (let j = start; j < page.blocks.length; j++) {
+          const block = page.blocks[j];
+          if (block.manualNumber) {
+            // Can't propagate past this.
+            return;
+          }
+
+          // Numbering applies only to verses and paragraphs.
+          if (block.type !== "verse" && block.type !== "p") {
+            continue;
+          }
+
+          // Skip blocks if they belong to other texts.
+          if (block.text !== firstBlock.text) {
+            continue;
+          }
+
+          block.n = `${prefix}${next}`;
+          // Merged blocks share the name number.
+          if (!block.merge_next) {
+            next += 1;
+          }
+        }
+      }
+    },
+
+    updateNumbering() {
+      // Clear all automatic numbers.
+      for (let i = 0; i < this.pages.length; i++) {
+        const page = this.pages[i];
+        for (let j = 0; j < page.blocks.length; j++) {
+          const block = page.blocks[j];
+          if (!block.manualNumber) {
+            block.n = null;
+          }
+        }
+      }
+
+      for (let i = 0; i < this.pages.length; i++) {
+        const page = this.pages[i];
+        for (let j = 0; j < page.blocks.length; j++) {
+          const block = page.blocks[j];
+          if (block.manualNumber) {
+            this.propagateNumbering(page, j);
+          }
+        }
+      }
+    },
+
+    generateStructure() {
+      const includedPages = this.pages.filter(page => !page.ignorePage);
+      const structure = {
+        project: '{{ project.slug }}',
+        pages: includedPages.map(page => ({
+          slug: page.slug,
+          blocks: page.blocks.map(block => {
+            const blockData = {
+              type: block.type,
+              lang: block.lang || null,
+              text: block.text || null,
+              merge_next: block.merge_next || false,
+              n: block.n || null,
+              mark: block.mark || null,
+            };
+
+            if (block.contentChanged) {
+              blockData.content = block.content;
+            }
+
+            return blockData;
+          })
+        }))
+      };
+
+      return structure;
+    },
+
+    previewStructure() {
+      const structure = this.generateStructure();
+      const includedPages = this.pages.filter(page => !page.ignorePage);
+      const ignoredCount = this.pages.length - includedPages.length;
+
+      this.structureJson = JSON.stringify(structure, null, 2);
+      this.structureStatus = `Generated structure for ${includedPages.length} pages` +
+        (ignoredCount > 0 ? ` (${ignoredCount} page${ignoredCount > 1 ? 's' : ''} ignored)` : '');
+      this.statusSuccess = false;
+    },
+
+    copyToClipboard() {
+      navigator.clipboard.writeText(this.structureJson).then(() => {
+        this.structureStatus = 'Copied to clipboard!';
+        setTimeout(() => {
+          this.structureStatus = '';
+        }, 2000);
+      }).catch(err => {
+        this.structureStatus = 'Failed to copy';
+        console.error('Copy failed:', err);
+      });
+    },
+
+    submitStructure() {
+      if (this.isSubmitting) return;
+
+      this.isSubmitting = true;
+      this.structureStatus = 'Preparing submission...';
+
+      const structure = this.generateStructure();
+      this.$refs.structureData.value = JSON.stringify(structure);
+
+      this.$el.closest('form').submit();
+    }
+  };
+}
+</script>
+{% endblock %}

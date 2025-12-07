@@ -49,7 +49,7 @@ def activity(username):
             orm.joinedload(db.Revision.page).load_only(db.Page.id, db.Page.slug),
         )
         .filter_by(author_id=user_.id)
-        .order_by(db.Revision.created.desc())
+        .order_by(db.Revision.created_at.desc())
         .limit(100)
     )
     recent_revisions = list(session.scalars(stmt).all())
