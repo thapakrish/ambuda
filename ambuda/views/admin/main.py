@@ -180,7 +180,7 @@ MODEL_CONFIG = [
     ),
     ModelConfig(
         model=db.Revision,
-        list_columns=["id", "page_id", "author_id", "created"],
+        list_columns=["id", "page_id", "author_id", "created_at"],
         category=Category.PROOFING,
         read_only=True,
     ),

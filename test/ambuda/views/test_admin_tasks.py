@@ -379,6 +379,7 @@ def test_import_projects_and_export_projects(admin_client):
             "description": "",
             "notes": "",
             "page_numbers": "",
+            "config": Any,
             "created_at": Any,
             "updated_at": Any,
             "board_id": Any,

@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from typing import NewType
 from xml.etree import ElementTree as ET
 
+import defusedxml.ElementTree as DET
 from indic_transliteration import sanscript
 
 Attributes = NewType("Attributes", dict[str, str])
@@ -307,31 +308,31 @@ def transform(xml: ET.Element, transforms: dict[str, Rule]) -> str:
 
 def transform_mw(blob: str) -> str:
     """Transform XML for the Monier-Williams dictionary."""
-    xml = ET.fromstring(blob)
+    xml = DET.fromstring(blob)
     return transform(xml, mw_xml)
 
 
 def transform_apte_sanskrit_english(blob: str) -> str:
     """Transform XML for the Apte Sanskrit-English dictionary."""
-    xml = ET.fromstring(blob)
+    xml = DET.fromstring(blob)
     return transform(xml, apte_cologne_xml)
 
 
 def transform_apte_sanskrit_hindi(blob: str) -> str:
     """Transform XML for the Apte Sanskrit-Hindi dictionary."""
-    xml = ET.fromstring(blob)
+    xml = DET.fromstring(blob)
     return transform(xml, apte_uoh_xml)
 
 
 def transform_vacaspatyam(blob: str) -> str:
     """Transform XML for the Vacaspatyam."""
-    xml = ET.fromstring(blob)
+    xml = DET.fromstring(blob)
     return transform(xml, vacaspatyam_xml)
 
 
 def transform_amarakosha(blob: str) -> str:
     """Transform XML for the Amarakosha."""
-    xml = ET.fromstring(blob)
+    xml = DET.fromstring(blob)
     return transform(xml, amarakosha_xml)
 
 
@@ -348,7 +349,7 @@ def parse_tei_header(blob: str | None) -> dict[str, str]:
     if not blob:
         return {}
 
-    xml = ET.fromstring(blob)
+    xml = DET.fromstring(blob)
 
     file_desc = xml.find("./fileDesc")
     availability_xml = file_desc.find("./publicationStmt/availability")
@@ -367,7 +368,7 @@ def parse_tei_header(blob: str | None) -> dict[str, str]:
 
 def transform_sak(blob: str) -> str:
     """Transform XML for the Shabdarthakaustubha."""
-    xml = ET.fromstring(blob)
+    xml = DET.fromstring(blob)
     # Reuse the Vacaspatyam xml config, since it's close enough.
     return transform(xml, vacaspatyam_xml)
 
@@ -380,5 +381,5 @@ def transform_text_block(block_blob: str) -> str:
     """
     # FIXME: leaky abstraction. We should return just a string blob here and
     # get the XML ID from `database.Block` instead.
-    xml = ET.fromstring(block_blob)
+    xml = DET.fromstring(block_blob)
     return transform(xml, transforms=tei_xml)

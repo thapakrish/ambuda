@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
 
+import defusedxml.ElementTree as DET
 from indic_transliteration import sanscript
 
 from ambuda.seed.utils.sandhi_utils import AC
@@ -148,7 +149,7 @@ def align_text_with_parse(xml_blob: str, tokens: list[Token]) -> str:
     """Align text and parse data by storing parse data on its source XML blob."""
     iter_tokens = iter(tokens)
 
-    xml = ET.fromstring(xml_blob)
+    xml = DET.fromstring(xml_blob)
     transliterate_text_to(xml, sanscript.DEVANAGARI, sanscript.SLP1)
 
     # In-order traversal of XML text nodes
