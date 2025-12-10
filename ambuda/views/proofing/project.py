@@ -1046,6 +1046,7 @@ def publish_config(slug):
         project_config = ProjectConfig.model_validate_json(project_.config or "{}")
     except Exception:
         flash("Project config is invalid. Please contact an admin user.", "error")
+        return redirect(url_for("proofing.index"))
 
     publish_config = project_config.model_dump_json(indent=2)
     return render_template(

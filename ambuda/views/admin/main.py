@@ -24,6 +24,7 @@ from wtforms import (
     TextAreaField,
     BooleanField,
     DateTimeField,
+    DateTimeLocalField,
     SelectField,
     SelectMultipleField,
 )
@@ -82,6 +83,12 @@ class ModelConfig:
 
 
 MODEL_CONFIG = [
+    ModelConfig(
+        model=db.Author,
+        list_columns=["id", "name"],
+        category=Category.TEXTS,
+        display_field="name",
+    ),
     ModelConfig(
         model=db.BlockParse,
         list_columns=["id", "text_id", "block_id"],
@@ -281,14 +288,32 @@ def get_many_to_many_info(model_class):
 
 
 def populate_model_attributes_from_form(obj, form, model_class):
+    from datetime import datetime
+
     m2m_info = get_many_to_many_info(model_class)
 
     for field in form:
         if field.name in m2m_info:
-            # Skip many-to-many fields - they're handled separately
             continue
         if hasattr(obj, field.name):
-            setattr(obj, field.name, field.data)
+            value = field.data
+            if field.type in ("DateTimeField", "DateTimeLocalField") and isinstance(
+                value, str
+            ):
+                for fmt in [
+                    "%Y-%m-%dT%H:%M:%S",
+                    "%Y-%m-%d %H:%M:%S.%f",
+                    "%Y-%m-%d %H:%M:%S",
+                    "%Y-%m-%dT%H:%M:%S.%f",
+                ]:
+                    try:
+                        value = datetime.strptime(value, fmt)
+                        break
+                    except (ValueError, TypeError):
+                        continue
+                else:
+                    value = None
+            setattr(obj, field.name, value)
 
 
 def populate_model_m2m_from_form(obj, form, model_class, session):
@@ -379,7 +404,14 @@ def create_model_form(model_class, obj=None):
             else:
                 fields[col_name] = StringField(col_name, **field_kwargs)
         else:
-            fields[col_name] = StringField(col_name, **field_kwargs)
+            from datetime import datetime, date
+
+            if python_type in (datetime, date):
+                fields[col_name] = DateTimeLocalField(
+                    col_name, format="%Y-%m-%dT%H:%M:%S", **field_kwargs
+                )
+            else:
+                fields[col_name] = StringField(col_name, **field_kwargs)
 
     m2m_info = get_many_to_many_info(model_class)
     session = q.get_session()
@@ -607,6 +639,7 @@ def edit_model(model_name, item_id):
         abort(404)
 
     form = create_model_form(model_class, obj=item)
+    fk_map = get_foreign_key_info(model_class)
 
     if form.validate_on_submit():
         if config.read_only:
@@ -632,6 +665,7 @@ def edit_model(model_name, item_id):
         item=item,
         item_id=item_id,
         read_only=config.read_only,
+        fk_map=fk_map,
         model_configs={c.model.__name__: c for c in MODEL_CONFIG},
         models_by_category=get_models_by_category(),
     )

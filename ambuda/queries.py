@@ -271,3 +271,8 @@ def contributor_info() -> list[db.ContributorInfo]:
 def genres() -> list[db.Genre]:
     session = get_session()
     return list(session.scalars(select(db.Genre)).all())
+
+
+def authors() -> list[db.Author]:
+    session = get_session()
+    return list(session.scalars(select(db.Author)).all())

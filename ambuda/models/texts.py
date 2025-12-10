@@ -34,7 +34,7 @@ class Text(Base):
     #: Additional metadata for this text as a JSON document.
     #: This is mainly for ambuda-internal notes on heading names, etc.
     # NOTE: `meta` is reserved by WTForms and `metadata` has other meanings in sqlalchemy,
-    # NOE: so just call this `config`.
+    # NOTE: so just call this `config`.
     config = Column(JSON, nullable=True)
     genre_id = foreign_key("genres.id", nullable=True)
     #: The project that created this text.
@@ -44,13 +44,17 @@ class Text(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=True)
     #: Timestamp at which this text was published.
     published_at = Column(DateTime, nullable=True)
+    # The text's author.
+    author_id = foreign_key("authors.id", nullable=True)
 
     #: An ordered list of the sections contained within this text.
     sections = relationship("TextSection", backref="text", cascade="delete")
-    #: The genre this text belogns to.
+    #: The genre this text belongs to.
     genre = relationship("Genre", backref="texts")
     #: The project that created this text.
     project = relationship("Project", backref="texts")
+    #: The author that created this text.
+    author = relationship("Author", backref="texts")
 
     def __str__(self):
         return self.slug
@@ -122,3 +126,19 @@ class TextBlock(Base):
 
     text = relationship("Text")
     page = relationship("Page", backref="text_blocks")
+
+
+class Author(Base):
+    """The author of some text."""
+
+    __tablename__ = "authors"
+
+    # Primary key.
+    id = pk()
+    # The author's name.
+    name = Column(String, nullable=False)
+    slug = Column(String, unique=True, nullable=False)
+
+    def __str__(self):
+        # Include slug because author names are not unique.
+        return f"{self.name} ({self.slug})"

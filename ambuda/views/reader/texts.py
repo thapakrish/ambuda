@@ -3,7 +3,7 @@
 import json
 
 from flask import Blueprint, abort, jsonify, render_template, url_for
-from indic_transliteration import sanscript
+from vidyut.lipi import transliterate, Scheme
 
 import ambuda.database as db
 import ambuda.queries as q
@@ -63,15 +63,24 @@ def _make_section_url(text: db.Text, section: db.TextSection | None) -> str | No
 
 
 def _hk_to_dev(s: str) -> str:
-    return sanscript.transliterate(s, sanscript.HK, sanscript.DEVANAGARI)
+    return transliterate(s, Scheme.HarvardKyoto, Scheme.Devanagari)
 
 
 @bp.route("/")
 def index():
     """Show all texts."""
-    all_texts = {t.slug: t for t in q.texts()}
+    texts = q.texts()
+    sorted_texts = sorted(
+        texts,
+        key=lambda x: transliterate(x.title, Scheme.HarvardKyoto, Scheme.Devanagari),
+    )
+    genre_map = {x.id: x for x in q.genres()}
+    author_map = {x.id: x for x in q.authors()}
     return render_template(
-        "texts/index.html", categories=TEXT_CATEGORIES, texts=all_texts
+        "texts/index.html",
+        texts=sorted_texts,
+        genre_map=genre_map,
+        author_map=author_map,
     )
 
 

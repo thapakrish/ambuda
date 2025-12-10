@@ -114,7 +114,7 @@ requires-dist = [
     { name = "flask-login", specifier = "==0.6.3" },
     { name = "flask-mail", specifier = "==0.9.1" },
     { name = "flask-wtf", specifier = "==1.2.1" },
-    { name = "google-cloud-vision", specifier = "==3.1.1" },
+    { name = "google-cloud-vision", specifier = ">=3.11.0" },
     { name = "google-generativeai", specifier = ">=0.8.5" },
     { name = "gunicorn", specifier = "==20.1.0" },
     { name = "indic-transliteration", specifier = "==2.3.31" },
@@ -923,17 +923,19 @@ wheels = [
 
 [[package]]
 name = "google-cloud-vision"
-version = "3.1.1"
+version = "3.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "google-api-core", version = "2.25.2", source = { registry = "https://pypi.org/simple" }, extra = ["grpc"], marker = "python_full_version >= '3.14'" },
     { name = "google-api-core", version = "2.28.1", source = { registry = "https://pypi.org/simple" }, extra = ["grpc"], marker = "python_full_version < '3.14'" },
+    { name = "google-auth" },
+    { name = "grpcio" },
     { name = "proto-plus" },
     { name = "protobuf" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bc/2a/9d2393afc05c2c179dc50cfe61b2980112032d7dd2a46c711472ca69ee01/google-cloud-vision-3.1.1.tar.gz", hash = "sha256:5fc611dad4c481c61e37a8f855f5dae00694fae45bc5a6d643275cd1461715b2", size = 664615, upload-time = "2022-08-15T14:35:17.133Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e2/83/8a5de5968933671badfffd1738eac489b29c557274d97191a4acbe0a5d9a/google_cloud_vision-3.11.0.tar.gz", hash = "sha256:c3cb57df2cf152ebe62ebaae9b1d5deff5a26aec5bd6e1c7f67e44bf6f4518f4", size = 570943, upload-time = "2025-10-20T14:57:34.107Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/be/ea/8d2780031c00c60d53f285f2a684fe2964ee6655f5e145a676bd14e68f70/google_cloud_vision-3.1.1-py2.py3-none-any.whl", hash = "sha256:dad3792820cedef8ed8271a503e4bb33b3a227cbf217586f3d993a1e0255ec7f", size = 386468, upload-time = "2022-08-15T14:35:15.607Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/ca/8c5ff6041a081a6271159b2e5d378be69c964da75191ff79ef241c6ccbb3/google_cloud_vision-3.11.0-py3-none-any.whl", hash = "sha256:8910f743a87a34058dd6e5e41790be1eb100a0b91c20cc6372a2388b328c8890", size = 529092, upload-time = "2025-10-20T14:55:33.756Z" },
 ]
 
 [[package]]

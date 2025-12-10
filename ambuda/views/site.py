@@ -17,7 +17,10 @@ def index():
         key=lambda x: transliterate(x.title, Scheme.HarvardKyoto, Scheme.Devanagari),
     )
     genre_map = {x.id: x for x in q.genres()}
-    return render_template("index.html", texts=sorted_texts, genre_map=genre_map)
+    author_map = {x.id: x for x in q.authors()}
+    return render_template(
+        "index.html", texts=sorted_texts, genre_map=genre_map, author_map=author_map
+    )
 
 
 @bp.route("/contact")
