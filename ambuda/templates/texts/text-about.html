@@ -25,4 +25,10 @@
 {% else %}
   <p>Sorry, we don't have any data available for this text right now.</p>
 {% endif %}
+
+{% if text.project %}
+<section class="prose mt-8">
+  <p>Project: <a href="{{ url_for('proofing.project.summary', slug=text.project.slug) }}">{{ text.project.display_title }}</a></p>
+</section>
+{% endif %}
 {% endblock %}

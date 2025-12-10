@@ -6,6 +6,17 @@ like this for readability.
 For the corresponding JavaScript bindings and logic, see `reader.js`.
 #}
 
+{% macro i_edit() %}
+<svg style="display: none" version="2.0"
+  <defs>
+    <symbol id="edit" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-4">
+      <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.262a1.75 1.75 0 0 0 0-2.474Z" />
+      <path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9A.75.75 0 0 1 14 9v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
+    </symbol>
+  </defs>
+</svg>
+{% endmacro %}
+
 
 {% extends 'header-main-footer.html' %}
 {% import 'macros/dictionaries.html' as m_dict %}
@@ -197,12 +208,22 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
   <div :class="fontSize">
 
   {{ header() }}
+  {{ i_edit() }}
 
   {# Server-side logic. This will be hidden once the application loads. #}
   <div x-show="!data.blocks.length">
     {% for block_ in html_blocks %}
     <s-block data-slug="{{ block_.slug }}">
-      <div class="mula">{{ block_.mula|safe }}</div>
+      <div class="flex items-start gap-2">
+        <div class="mula flex-1">{{ block_.mula|safe }}</div>
+        {% if block_.page_url %}
+        <a href="{{ block_.page_url }}"
+           class="text-slate-400 hover:text-slate-600 flex-shrink-0 mt-1"
+           title="Edit in proofing interface">
+          <svg width="16" height="16"><use href="#edit"></use></svg>
+        </a>
+        {% endif %}
+      </div>
     </s-block>
     {% endfor %}
   </div>
@@ -210,13 +231,23 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
   {# Client-side logic. This is what most readers will see and use. #}
   <template x-for="b in data.blocks">
     <s-block :data-slug="b.slug">
-      <div :class="getBlockClasses(b)">
-        <div x-show="showBlockMula(b)" :class="getMulaClasses" x-html="transliterateHTML(b.mula)"></div>
-        <div x-show="b.showParse" x-html="transliterateHTML(b.parse)"></div>
+      <div class="flex items-start gap-2">
+        <div class="flex-1">
+          <div :class="getBlockClasses(b)">
+            <div x-show="showBlockMula(b)" :class="getMulaClasses" x-html="transliterateHTML(b.mula)"></div>
+            <div x-show="b.showParse" x-html="transliterateHTML(b.parse)"></div>
+          </div>
+          <span class="text-sm text-zinc-400 hover:underline" x-show="b.showParse">
+            <a @click.prevent="hideParse(b)" href="#" x-text="getParseLayoutTogglerText"></a>
+          </span>
+        </div>
+        <a x-show="b.page_url"
+           :href="b.page_url"
+           class="text-slate-400 hover:text-slate-600 flex-shrink-0 mt-1"
+           title="Edit in proofing interface">
+          <svg width="16" height="16"><use href="#edit"></use></svg>
+        </a>
       </div>
-      <span class="text-sm text-zinc-400 hover:underline" x-show="b.showParse">
-        <a @click.prevent="hideParse(b)" href="#" x-text="getParseLayoutTogglerText"></a>
-      </span>
     </s-block>
   </template>
 

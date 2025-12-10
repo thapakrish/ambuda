@@ -8,8 +8,9 @@ We define texts with three different tables:
 """
 
 import json
+from datetime import UTC, datetime
 
-from sqlalchemy import Column, Integer, String, JSON, event
+from sqlalchemy import Column, DateTime, Integer, String, JSON, event
 from sqlalchemy import Text as _Text
 from sqlalchemy.orm import relationship
 
@@ -36,11 +37,20 @@ class Text(Base):
     # NOE: so just call this `config`.
     config = Column(JSON, nullable=True)
     genre_id = foreign_key("genres.id", nullable=True)
+    #: The project that created this text.
+    project_id = foreign_key("proof_projects.id", nullable=True)
+    #: Timestamp at which this text was created.
+    #: Nullable for legacy reasons.
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=True)
+    #: Timestamp at which this text was published.
+    published_at = Column(DateTime, nullable=True)
 
     #: An ordered list of the sections contained within this text.
     sections = relationship("TextSection", backref="text", cascade="delete")
     #: The genre this text belogns to.
     genre = relationship("Genre", backref="texts")
+    #: The project that created this text.
+    project = relationship("Project", backref="texts")
 
     def __str__(self):
         return self.slug
@@ -101,6 +111,8 @@ class TextBlock(Base):
     text_id = foreign_key("texts.id")
     #: The section this block belongs to.
     section_id = foreign_key("text_sections.id")
+    #: The proofing page this block came from.
+    page_id = foreign_key("proof_pages.id", nullable=True)
     #: Human-readable ID, which we display in the URL.
     slug = Column(String, index=True, nullable=False)
     #: Raw XML content, which we translate into HTML at serving time.
@@ -109,3 +121,4 @@ class TextBlock(Base):
     n = Column(Integer, nullable=False)
 
     text = relationship("Text")
+    page = relationship("Page", backref="text_blocks")

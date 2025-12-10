@@ -3,7 +3,8 @@
 import uuid
 from datetime import datetime, UTC
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from pydantic import BaseModel, Field
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String
 from sqlalchemy import Text as Text_
 from sqlalchemy.orm import relationship
 
@@ -42,6 +43,19 @@ class Genre(Base):
         return self.name
 
 
+class PublishConfig(BaseModel):
+    slug: str
+    title: str
+    target: str | None = None
+    author: str | None = None
+    language: str | None = None
+
+
+class ProjectConfig(BaseModel):
+    publish: list[PublishConfig]
+    pages: list[str] = Field(default_factory=list)
+
+
 class Project(Base):
     """A proofreading project.
 
@@ -78,6 +92,9 @@ class Project(Base):
     notes = text()
     #: Defines page numbers (e.g. "x", "vii", ...)
     page_numbers = text()
+    #: Additional metadata for this project as a JSON document.
+    #: The schema is defined in `ProjectConfig`.
+    config = Column(JSON, nullable=True)
 
     #: Timestamp at which this project was created.
     created_at = Column(

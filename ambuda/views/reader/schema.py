@@ -9,6 +9,8 @@ class Block:
     slug: str
     #: HTML content for the given block.
     mula: str
+    #: URL to edit this block in the proofing interface (if available)
+    page_url: str | None = None
 
 
 @dataclass

@@ -2,6 +2,8 @@ import dataclasses as dc
 import json
 import logging
 import re
+from datetime import UTC, datetime
+from xml.etree import ElementTree as ET
 
 from celery.result import GroupResult
 from flask import (
@@ -18,6 +20,7 @@ from flask_login import current_user, login_required
 from flask_wtf import FlaskForm
 from markupsafe import Markup, escape
 from pydantic import BaseModel, TypeAdapter
+import sqlalchemy as sqla
 from sqlalchemy import orm, select
 from werkzeug.exceptions import abort
 from werkzeug.utils import redirect
@@ -36,11 +39,13 @@ from wtforms_sqlalchemy.fields import QuerySelectField
 
 from ambuda import database as db
 from ambuda import queries as q
+from ambuda.models.proofing import PublishConfig, ProjectConfig
 from ambuda.tasks import app as celery_app
 from ambuda.tasks import llm_structuring as llm_structuring_tasks
 from ambuda.tasks import ocr as ocr_tasks
+from ambuda.utils import diff as diff_utils
 from ambuda.utils import project_utils, proofing_utils, structuring
-from ambuda.utils.structuring import Block, StructuredPage
+from ambuda.utils.structuring import ProofBlock, ProofPage, ProofProject, TEIDocument
 from ambuda.utils.revisions import add_revision
 from ambuda.views.proofing.decorators import moderator_required, p2_required
 from ambuda.views.proofing.stats import calculate_stats
@@ -221,7 +226,7 @@ def summary(slug):
 
     session = q.get_session()
     stmt = (
-        select(db.Revision)
+        sqla.select(db.Revision)
         .filter_by(project_id=project_.id)
         .order_by(db.Revision.created_at.desc())
         .limit(10)
@@ -247,7 +252,7 @@ def activity(slug):
 
     session = q.get_session()
     stmt = (
-        select(db.Revision)
+        sqla.select(db.Revision)
         .options(orm.defer(db.Revision.content))
         .filter_by(project_id=project_.id)
         .order_by(db.Revision.created_at.desc())
@@ -832,11 +837,10 @@ def batch_structuring(slug):
 
             latest_revision = page.revisions[-1]
             old_content = latest_revision.content
-            old_structured_page = StructuredPage.from_string(old_content)
+            old_structured_page = ProofPage.from_revision(latest_revision)
 
             new_blocks = []
             had_parse_error = False
-            num_diffs_with_content_override = 0
             for i, block_data in enumerate(page_diff.blocks):
                 content = block_data.content
                 if content is None:
@@ -844,11 +848,9 @@ def batch_structuring(slug):
                         content = old_structured_page.blocks[i].content
                     else:
                         content = ""
-                else:
-                    num_diffs_with_content_override += 1
 
                 try:
-                    new_block = Block(
+                    new_block = ProofBlock(
                         type=block_data.type,
                         content=content,
                         lang=block_data.lang,
@@ -864,15 +866,11 @@ def batch_structuring(slug):
 
                 new_blocks.append(new_block)
 
-            if num_diffs_with_content_override * 10 > len(page_diff.blocks):
-                errors.append("Clearing too many pages, possible bug")
-                continue
-
             if had_parse_error:
                 errors.append(f"Could not parse edits for {page_slug}.")
                 continue
 
-            new_structured_page = StructuredPage(blocks=new_blocks)
+            new_structured_page = ProofPage(blocks=new_blocks)
             new_content = new_structured_page.to_xml_string()
             if old_content == new_content:
                 unchanged_pages.append(page_slug)
@@ -913,13 +911,14 @@ def batch_structuring(slug):
         else:
             flash(message, "info")
 
+        print(errors)
         return redirect(url_for("proofing.project.summary", slug=slug))
 
     pages_with_content = []
     for page in project_.pages:
         if page.revisions:
             latest_revision = page.revisions[-1]
-            structured_data = StructuredPage.from_string(latest_revision.content)
+            structured_data = ProofPage.from_revision(latest_revision)
 
             pages_with_content.append(
                 {
@@ -1005,6 +1004,329 @@ def batch_llm_structuring_status(task_id):
         "include/llm-structuring-progress.html",
         **data,
     )
+
+
+@bp.route("/<slug>/publish", methods=["GET", "POST"])
+@p2_required
+def publish_config(slug):
+    """Configure publish settings for the project."""
+    project_ = q.project(slug)
+    if project_ is None:
+        abort(404)
+
+    if request.method == "POST":
+        publish_json = request.form.get("publish_config", "")
+        default = lambda: render_template(
+            "proofing/projects/publish.html",
+            project=project_,
+            publish_config=publish_json,
+        )
+
+        try:
+            new_config = ProjectConfig.model_validate_json(publish_json)
+        except Exception as e:
+            flash(f"Validation error: {e}", "error")
+            return default()
+
+        try:
+            old_config = ProjectConfig.model_validate_json(project_.config or "{}")
+        except Exception as e:
+            flash(f"Validation error: {e}", "error")
+            return default()
+
+        # TODO: tighten restrictions here -- should only be able to update 'publish' ?
+        if new_config != old_config:
+            session = q.get_session()
+            project_.config = new_config.model_dump_json()
+            session.commit()
+
+        return redirect(url_for("proofing.project.publish_preview", slug=slug))
+
+    try:
+        project_config = ProjectConfig.model_validate_json(project_.config or "{}")
+    except Exception:
+        flash("Project config is invalid. Please contact an admin user.", "error")
+
+    publish_config = project_config.model_dump_json(indent=2)
+    return render_template(
+        "proofing/projects/publish.html",
+        project=project_,
+        publish_config=publish_config,
+    )
+
+
+@bp.route("/<slug>/publish/preview", methods=["GET"])
+@p2_required
+def publish_preview(slug):
+    """Preview the changes that will be made when publishing."""
+    project_ = q.project(slug)
+    if project_ is None:
+        abort(404)
+
+    config_page = lambda: redirect(
+        url_for("proofing.project.publish_config", slug=slug)
+    )
+    if not project_.config:
+        flash("No publish configuration found. Please configure first.", "error")
+        return config_page()
+    try:
+        project_config = ProjectConfig.model_validate_json(project_.config or "{}")
+    except Exception as e:
+        flash("Could not validate project config", "error")
+        return config_page()
+    if not project_config.publish:
+        flash("No publish configuration found. Please configure first.", "error")
+        return config_page()
+
+    session = q.get_session()
+    previews = []
+
+    text_slugs = [config.slug for config in project_config.publish]
+    existing_texts = (
+        session.execute(sqla.select(db.Text).where(db.Text.slug.in_(text_slugs)))
+        .scalars()
+        .all()
+    )
+    text_map = {text.slug: text for text in existing_texts}
+    text_ids = [text.id for text in existing_texts]
+
+    blocks_by_text = {}
+    if text_ids:
+        existing_blocks_query = (
+            session.execute(
+                sqla.select(db.TextBlock)
+                .where(db.TextBlock.text_id.in_(text_ids))
+                .order_by(db.TextBlock.text_id, db.TextBlock.n)
+            )
+            .scalars()
+            .all()
+        )
+        for block in existing_blocks_query:
+            blocks_by_text.setdefault(block.text_id, []).append(block)
+
+    for config in project_config.publish:
+        existing_text = text_map.get(config.slug)
+        document = _create_tei_document(project_, config.target)
+
+        new_blocks = [b.xml for section in document.sections for b in section.blocks]
+        existing_blocks = []
+        if existing_text:
+            existing_blocks = blocks_by_text.get(existing_text.id, [])
+
+        diffs = []
+        max_len = max(len(new_blocks), len(existing_blocks))
+        for i in range(max_len):
+            old_xml = existing_blocks[i].xml if i < len(existing_blocks) else None
+            new_xml = new_blocks[i] if i < len(new_blocks) else None
+
+            if old_xml is None and new_xml is not None:
+                diffs.append(
+                    {
+                        "index": i,
+                        "type": "added",
+                        "diff": new_xml,
+                    }
+                )
+            elif old_xml is not None and new_xml is None:
+                diffs.append(
+                    {
+                        "index": i,
+                        "type": "removed",
+                        "diff": old_xml,
+                    }
+                )
+            elif old_xml != new_xml:
+                diffs.append(
+                    {
+                        "index": i,
+                        "type": "changed",
+                        "diff": diff_utils.revision_diff(old_xml, new_xml),
+                    }
+                )
+
+        preview = {
+            "slug": config.slug,
+            "title": config.title,
+            "target": config.target,
+            "is_new": existing_text is None,
+            "diffs": diffs,
+        }
+
+        previews.append(preview)
+
+    return render_template(
+        "proofing/projects/publish-preview.html",
+        project=project_,
+        previews=previews,
+    )
+
+
+def _create_tei_document(project_, target: str) -> TEIDocument:
+    """Gather content blocks from all pages for a specific target."""
+    revisions = []
+    for page in project_.pages:
+        if not page.revisions:
+            continue
+        latest_revision = page.revisions[-1]
+        revisions.append(latest_revision)
+
+    rules = project_utils.parse_page_number_spec(project_.page_numbers)
+    page_numbers = project_utils.apply_rules(len(project_.pages), rules)
+    proof_project = ProofProject.from_revisions(revisions)
+    return proof_project.to_tei_document(target=target, page_numbers=page_numbers)
+
+
+@bp.route("/<slug>/publish/create", methods=["POST"])
+@p2_required
+def publish_create(slug):
+    """Create or update texts based on the publish configuration."""
+    project_ = q.project(slug)
+    if project_ is None:
+        abort(404)
+
+    lambda config_page: redirect(url_for("proofing.project.publish_config", slug=slug))
+
+    if not project_.config:
+        flash("No publish configuration found. Please configure first.", "error")
+        return config_page()
+
+    try:
+        project_config = ProjectConfig.model_validate_json(project_.config)
+    except Exception:
+        flash("Could not validate project config.", "error")
+        return config_page()
+
+    session = q.get_session()
+    created_count = 0
+    updated_count = 0
+
+    for config in project_config.publish:
+        document = _create_tei_document(project_, config.target)
+
+        text = q.text(config.slug)
+        is_new_text = False
+        if not text:
+            text = db.Text(
+                slug=config.slug,
+                title=config.title,
+                published_at=datetime.now(UTC),
+                project_id=project_.id,
+            )
+            session.add(text)
+            session.flush()
+            is_new_text = True
+        else:
+            if text.project_id != project_.id:
+                text.project_id = project_.id
+
+        existing_sections = {s.slug for s in text.sections}
+        doc_sections = {s.slug for s in document.sections}
+        section_map = {s.slug: s for s in text.sections}
+
+        if existing_sections != doc_sections:
+            new_sections = doc_sections - existing_sections
+            old_sections = existing_sections - doc_sections
+
+            for old_slug in old_sections:
+                old_section = next(
+                    (s for s in text.sections if s.slug == old_slug), None
+                )
+                if old_section:
+                    session.delete(old_section)
+                    del section_map[old_slug]
+
+            for new_slug in new_sections:
+                doc_section = next(
+                    (s for s in document.sections if s.slug == new_slug), None
+                )
+                if doc_section:
+                    new_section = db.TextSection(
+                        text_id=text.id,
+                        slug=new_slug,
+                        title=new_slug,
+                    )
+                    session.add(new_section)
+                    section_map[new_slug] = new_section
+
+            session.flush()
+
+        existing_blocks = {
+            b.slug
+            for b in session.execute(
+                sqla.select(db.TextBlock).where(db.TextBlock.text_id == text.id)
+            )
+            .scalars()
+            .all()
+        }
+        doc_blocks = {b.slug for s in document.sections for b in s.blocks}
+
+        if existing_blocks != doc_blocks:
+            old_blocks = existing_blocks - doc_blocks
+            new_blocks = doc_blocks - existing_blocks
+
+            if old_blocks:
+                session.execute(
+                    sqla.delete(db.TextBlock).where(
+                        db.TextBlock.text_id == text.id,
+                        db.TextBlock.slug.in_(old_blocks),
+                    )
+                )
+
+            existing_blocks = existing_blocks - old_blocks
+        else:
+            new_blocks = set()
+
+        existing_blocks_map = {}
+        if existing_blocks:
+            existing_blocks_list = (
+                session.execute(
+                    sqla.select(db.TextBlock).where(
+                        db.TextBlock.text_id == text.id,
+                        db.TextBlock.slug.in_(existing_blocks),
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            existing_blocks_map = {b.slug: b for b in existing_blocks_list}
+
+        block_index = 0
+        for doc_section in document.sections:
+            section = section_map[doc_section.slug]
+
+            for block in doc_section.blocks:
+                block_index += 1
+
+                if block.slug in existing_blocks_map:
+                    existing_block = existing_blocks_map[block.slug]
+                    existing_block.xml = block.xml
+                    existing_block.n = block_index
+                    existing_block.section_id = section.id
+                    existing_block.page_id = block.page_id
+                elif block.slug in new_blocks:
+                    new_block = db.TextBlock(
+                        text_id=text.id,
+                        section_id=section.id,
+                        slug=block.slug,
+                        xml=block.xml,
+                        n=block_index,
+                        page_id=block.page_id,
+                    )
+                    session.add(new_block)
+
+        if is_new_text:
+            created_count += 1
+        else:
+            updated_count += 1
+
+    session.commit()
+
+    if created_count > 0:
+        flash(f"Created {created_count} text(s)", "success")
+    if updated_count > 0:
+        flash(f"Updated {updated_count} text(s)", "success")
+
+    return redirect(url_for("proofing.project.publish_config", slug=slug))
 
 
 @bp.route("/<slug>/admin", methods=["GET", "POST"])

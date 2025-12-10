@@ -54,7 +54,7 @@ def parse_page_number_spec(numbers: str) -> list[Rule]:
     return rules
 
 
-def apply_rules(num_pages: int, rules: list[Rule]):
+def apply_rules(num_pages: int, rules: list[Rule]) -> list[str]:
     slugs = []
 
     for n in range(1, num_pages + 1):

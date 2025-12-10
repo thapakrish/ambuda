@@ -21,7 +21,7 @@ from ambuda.utils import google_ocr, llm_structuring, project_utils, structuring
 from ambuda.utils.assets import get_page_image_filepath
 from ambuda.utils.diff import revision_diff
 from ambuda.utils.revisions import EditError, add_revision
-from ambuda.utils.structuring import StructuredPage
+from ambuda.utils.structuring import ProofPage
 from ambuda.views.api import bp as api
 from ambuda.views.site import bp as site
 
@@ -330,7 +330,7 @@ def structuring_api(project_slug, page_slug):
         return "Error: No content provided", 400
 
     try:
-        structured_data = StructuredPage.from_string(content)
+        structured_data = ProofPage.from_string(content)
         return structured_data.to_xml_string()
     except Exception as e:
         current_app.logger.error(f"Structuring failed: {e}")

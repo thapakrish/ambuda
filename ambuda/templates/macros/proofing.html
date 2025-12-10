@@ -74,6 +74,7 @@
   ("talk",     _("Talk"),      url_for("proofing.talk.board", slug=project.slug)),
   ("edit",     _("Edit"),      url_for("proofing.project.edit", slug=project.slug)),
   ("download", _("Download"),  url_for("proofing.project.download", slug=project.slug)),
+  ("publish",  _("Publish"),   url_for("proofing.project.publish_config", slug=project.slug)),
 ] %}
 {% if is_mod %}{% set routes = routes + [
   ("stats",    _("Stats"),     url_for("proofing.project.stats", slug=project.slug)),

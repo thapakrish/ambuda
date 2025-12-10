@@ -168,15 +168,29 @@ def section(text_slug, section_slug):
     # Fetch with content blocks
     cur = q.text_section(text_.id, section_slug)
 
+    # TODO: this sucks
     with q.get_session() as _:
         _ = cur.blocks
+        for block in cur.blocks:
+            _ = block.page
+            if block.page:
+                _ = block.page.project
 
     blocks = []
     for block in cur.blocks:
+        page = block.page
+        page_url = None
+        if page:
+            page_url = url_for(
+                "proofing.page.edit",
+                project_slug=page.project.slug,
+                page_slug=page.slug,
+            )
         blocks.append(
             Block(
                 slug=block.slug,
                 mula=xml.transform_text_block(block.xml),
+                page_url=page_url,
             )
         )
 
