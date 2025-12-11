@@ -330,7 +330,7 @@ def structuring_api(project_slug, page_slug):
         return "Error: No content provided", 400
 
     try:
-        structured_data = ProofPage.from_string(content)
+        structured_data = ProofPage.from_content_and_page_id(content, page_.id)
         return structured_data.to_xml_string()
     except Exception as e:
         current_app.logger.error(f"Structuring failed: {e}")

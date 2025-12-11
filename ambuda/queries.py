@@ -217,6 +217,12 @@ def page(project_id, page_slug: str) -> db.Page | None:
     return session.scalars(stmt).first()
 
 
+def revision(revision_id) -> db.Revision | None:
+    session = get_session()
+    stmt = select(db.Revision).filter((db.Revision.id == revision_id))
+    return session.scalars(stmt).first()
+
+
 def user(username: str) -> db.User | None:
     session = get_session()
     stmt = select(db.User).filter_by(

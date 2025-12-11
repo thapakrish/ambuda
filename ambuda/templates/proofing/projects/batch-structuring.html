@@ -49,6 +49,42 @@
     </div>
 
     <div class="mb-4 pb-4 border-b border-slate-300">
+      <p class="text-sm mb-2">Assign blocks containing text:</p>
+      <div class="flex gap-2 items-center flex-wrap">
+        <span class="text-sm">Assign all blocks containing</span>
+        <input type="text"
+               x-model="bulkSearchText"
+               placeholder="search text"
+               class="border rounded px-2 py-1 text-sm w-32">
+        <span class="text-sm">to text</span>
+        <input type="text"
+               x-model="bulkSearchTargetText"
+               placeholder="text name"
+               class="border rounded px-2 py-1 text-sm w-32">
+        <button @click="bulkAssignByContent()" class="btn btn-primary text-sm">Apply</button>
+      </div>
+      <p x-show="bulkSearchStatus" x-text="bulkSearchStatus" class="text-sm mt-2 text-slate-700"></p>
+    </div>
+
+    <div class="mb-4 pb-4 border-b border-slate-300">
+      <p class="text-sm mb-2">Rename text:</p>
+      <div class="flex gap-2 items-center flex-wrap">
+        <span class="text-sm">Rename text</span>
+        <input type="text"
+               x-model="renameOldText"
+               placeholder="old name"
+               class="border rounded px-2 py-1 text-sm w-32">
+        <span class="text-sm">to</span>
+        <input type="text"
+               x-model="renameNewText"
+               placeholder="new name"
+               class="border rounded px-2 py-1 text-sm w-32">
+        <button @click="bulkRenameText()" class="btn btn-primary text-sm">Apply</button>
+      </div>
+      <p x-show="renameStatus" x-text="renameStatus" class="text-sm mt-2 text-slate-700"></p>
+    </div>
+
+    <div class="mb-4 pb-4 border-b border-slate-300">
       <p class="text-sm mb-2">Filter by text:</p>
       <div class="flex gap-2 items-center">
         <select x-model="filterText" class="border rounded px-2 py-1 text-sm">
@@ -91,7 +127,10 @@
   <template x-for="item in filteredPages()" :key="item.slug">
     <div class="border-t border-slate-200 mt-4 pt-2">
       <div class="flex items-center gap-2 mb-2">
-        <h2 class="text-xs font-medium text-slate-400" x-text="'Page ' + item.slug"></h2>
+        <a :href="'{{ url_for('proofing.page.edit', project_slug=project.slug, page_slug='') }}' + item.slug"
+           target="_blank"
+           class="text-xs font-medium text-slate-400 hover:text-blue-600 hover:underline"
+           x-text="'Page ' + item.slug"></a>
         <label class="flex items-center gap-1 cursor-pointer hover:bg-slate-100 px-1 py-0.5 rounded">
           <input type="checkbox"
                  x-model="item.ignorePage"
@@ -258,6 +297,12 @@ function batchStructuring() {
     bulkType: '',
     bulkText: '',
     bulkStatus: '',
+    bulkSearchText: '',
+    bulkSearchTargetText: '',
+    bulkSearchStatus: '',
+    renameOldText: '',
+    renameNewText: '',
+    renameStatus: '',
     filterText: '',
     structureJson: '',
     structureStatus: '',
@@ -317,6 +362,67 @@ function batchStructuring() {
           }
         });
       });
+    },
+
+    bulkAssignByContent() {
+      const searchText = this.bulkSearchText;
+      const targetText = this.bulkSearchTargetText;
+
+      if (!searchText || searchText.trim() === '') {
+        this.bulkSearchStatus = 'Please enter search text';
+        return;
+      }
+
+      if (!targetText || targetText.trim() === '') {
+        this.bulkSearchStatus = 'Please enter a text name';
+        return;
+      }
+
+      let count = 0;
+      const searchLower = searchText.trim().toLowerCase();
+
+      this.pages.forEach(page => {
+        page.blocks.forEach(block => {
+          if (block.content && block.content.toLowerCase().includes(searchLower)) {
+            block.text = targetText.trim();
+            count++;
+          }
+        });
+      });
+
+      this.bulkSearchStatus = `Assigned ${count} blocks containing "${searchText}" to text "${targetText}"`;
+      this.updateNumbering();
+    },
+
+    bulkRenameText() {
+      const oldText = this.renameOldText;
+      const newText = this.renameNewText;
+
+      if (!oldText || oldText.trim() === '') {
+        this.renameStatus = 'Please enter old text name';
+        return;
+      }
+
+      if (!newText || newText.trim() === '') {
+        this.renameStatus = 'Please enter new text name';
+        return;
+      }
+
+      let count = 0;
+      const oldTextTrimmed = oldText.trim();
+      const newTextTrimmed = newText.trim();
+
+      this.pages.forEach(page => {
+        page.blocks.forEach(block => {
+          if (block.text === oldTextTrimmed) {
+            block.text = newTextTrimmed;
+            count++;
+          }
+        });
+      });
+
+      this.renameStatus = `Renamed ${count} blocks from "${oldText}" to "${newText}"`;
+      this.updateNumbering();
     },
 
     getUniqueTexts(page) {

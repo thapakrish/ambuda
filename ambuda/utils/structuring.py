@@ -44,9 +44,9 @@ class ProofPage:
     #: The page's blocks in order.
     blocks: list[ProofBlock]
 
-    def _from_xml_string(revision: db.Revision) -> "ProofPage":
+    def _from_xml_string(content: str, page_id: int) -> "ProofPage":
         # To prevent XML-based attacks
-        root = DET.fromstring(revision.content)
+        root = DET.fromstring(content)
         if root.tag != "page":
             raise ValueError("Invalid root tag name")
 
@@ -72,18 +72,23 @@ class ProofPage:
                 )
             )
 
-        return ProofPage(id=revision.page_id, blocks=blocks)
+        return ProofPage(id=page_id, blocks=blocks)
 
     @staticmethod
     def from_revision(revision: db.Revision) -> "ProofPage":
+        text = revision.content.strip()
+        return ProofPage.from_content_and_page_id(text, revision.page_id)
+
+    @staticmethod
+    def from_content_and_page_id(text: str, page_id: int) -> "ProofPage":
+        """Exposed for `def structuring_api`"""
         try:
-            return ProofPage._from_xml_string(revision)
+            return ProofPage._from_xml_string(text, page_id)
         except Exception:
             pass
 
-        text = revision.content.strip()
         if not text:
-            return ProofPage(blocks=[])
+            return ProofPage(blocks=[], id=page_id)
 
         lines = [x.strip() for x in text.splitlines()]
         text_blocks = []
@@ -123,7 +128,7 @@ class ProofPage:
                     mark=mark,
                 )
             )
-        return ProofPage(id=revision.page_id, blocks=blocks)
+        return ProofPage(id=page_id, blocks=blocks)
 
     def to_xml_string(self) -> str:
         root = ET.Element("page")
@@ -222,7 +227,7 @@ class ProofProject:
         pages = []
         for revision in revisions:
             try:
-                page = ProofPage._from_xml_string(revision)
+                page = ProofPage._from_xml_string(revision.content, revision.page_id)
             except Exception as e:
                 continue
 

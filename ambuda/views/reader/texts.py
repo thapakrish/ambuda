@@ -8,6 +8,7 @@ from vidyut.lipi import transliterate, Scheme
 import ambuda.database as db
 import ambuda.queries as q
 from ambuda.consts import TEXT_CATEGORIES
+from ambuda.models.texts import TextConfig
 from ambuda.utils import xml
 from ambuda.utils.json_serde import AmbudaJSONEncoder
 from ambuda.views.api import bp as api
@@ -92,15 +93,11 @@ def text(slug):
         abort(404)
 
     try:
-        config = json.loads(text.config)
+        config = TextConfig.model_validate_json(text.config)
     except Exception:
-        config = {}
+        config = TextConfig()
 
-    # NOTE: experimental -- metadata paths may move at any time.
-    try:
-        prefix_titles = config["titles"]["fixed"]
-    except Exception:
-        prefix_titles = {}
+    prefix_titles = config.titles.fixed
 
     section_groups = {}
     for section in text.sections:
@@ -113,7 +110,7 @@ def text(slug):
             x, y = section.slug.split(".")
             # NOTE: experimental -- metadata paths may move at any time.
             try:
-                pattern = config["titles"]["patterns"]["x.y"]
+                pattern = config.titles.patterns["x.y"]
             except Exception:
                 pattern = None
             if pattern:

@@ -10,11 +10,21 @@ We define texts with three different tables:
 import json
 from datetime import UTC, datetime
 
+from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, Integer, String, JSON, event
 from sqlalchemy import Text as _Text
 from sqlalchemy.orm import relationship
 
 from ambuda.models.base import Base, foreign_key, pk
+
+
+class TitleConfig(BaseModel):
+    fixed: dict[str, str] = Field(default_factory=dict)
+    patterns: dict[str, str] = Field(default_factory=dict)
+
+
+class TextConfig(BaseModel):
+    titles: TitleConfig = Field(default_factory=TitleConfig)
 
 
 class Text(Base):
@@ -35,6 +45,7 @@ class Text(Base):
     #: This is mainly for ambuda-internal notes on heading names, etc.
     # NOTE: `meta` is reserved by WTForms and `metadata` has other meanings in sqlalchemy,
     # NOTE: so just call this `config`.
+    #: The schema is defined in `TextConfig`.
     config = Column(JSON, nullable=True)
     genre_id = foreign_key("genres.id", nullable=True)
     #: The project that created this text.
