@@ -78,7 +78,7 @@ def validate_text(mapper, connection, text):
         try:
             json.loads(text.config)
         except (TypeError, ValueError) as e:
-            raise ValueError(f"Text.meta must be a valid JSON document: {e}")
+            raise ValueError(f"Text.config must be a valid JSON document: {e}")
 
 
 class TextSection(Base):
@@ -137,6 +137,9 @@ class TextBlock(Base):
 
     text = relationship("Text")
     page = relationship("Page", backref="text_blocks")
+
+    def __str__(self) -> str:
+        return self.slug
 
 
 class Author(Base):

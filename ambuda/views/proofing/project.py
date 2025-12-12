@@ -1130,7 +1130,6 @@ def publish_preview(slug):
             if old_xml is None and new_xml is not None:
                 diffs.append(
                     {
-                        "index": i,
                         "type": "added",
                         "diff": new_xml,
                     }
@@ -1138,7 +1137,6 @@ def publish_preview(slug):
             elif old_xml is not None and new_xml is None:
                 diffs.append(
                     {
-                        "index": i,
                         "type": "removed",
                         "diff": old_xml,
                     }
@@ -1146,7 +1144,6 @@ def publish_preview(slug):
             elif old_xml != new_xml:
                 diffs.append(
                     {
-                        "index": i,
                         "type": "changed",
                         "diff": diff_utils.revision_diff(old_xml, new_xml),
                     }

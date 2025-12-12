@@ -81,7 +81,7 @@
         {% for diff in preview.diffs %}
         <div class="border rounded p-3 {% if diff.type == 'added' %}bg-green-50 border-green-200{% elif diff.type == 'removed' %}bg-red-50 border-red-200{% else %}bg-yellow-50 border-yellow-200{% endif %}">
           <div class="flex items-center gap-2 mb-2">
-            <span class="text-xs font-mono text-slate-600">Block #{{ diff.index }}</span>
+            <span class="text-xs font-mono text-slate-600">Block #{{ loop.index }}</span>
             <span class="px-2 py-0.5 text-xs font-semibold rounded {% if diff.type == 'added' %}bg-green-200 text-green-900{% elif diff.type == 'removed' %}bg-red-200 text-red-900{% else %}bg-yellow-200 text-yellow-900{% endif %}">
               {{ diff.type|upper }}
             </span>

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, UTC
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, event
 from sqlalchemy import Text as Text_
 from sqlalchemy.orm import relationship
 
@@ -52,7 +52,7 @@ class PublishConfig(BaseModel):
 
 
 class ProjectConfig(BaseModel):
-    publish: list[PublishConfig]
+    publish: list[PublishConfig] = Field(default_factory=list)
     pages: list[str] = Field(default_factory=list)
 
 
@@ -122,6 +122,16 @@ class Project(Base):
 
     def __str__(self):
         return self.slug
+
+@event.listens_for(Project, "before_insert")
+@event.listens_for(Project, "before_update")
+def validate_config(mapper, connection, project):
+    if project.config:
+        try:
+            ProjectConfig.model_validate_json(project.config)
+        except Exception as e:
+            raise ValueError(f"Project.config must be a valid JSON document: {e}")
+        
 
 
 class Page(Base):
