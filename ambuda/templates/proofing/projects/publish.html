@@ -16,24 +16,246 @@
 <div class="prose max-w-none">
   <h2>Publish</h2>
 
-  <form method="POST" action="{{ url_for('proofing.project.publish_config', slug=project.slug) }}"
-    class="not-prose">
-    <div class="mb-4">
-      <label class="block font-bold mb-2" for="publish_config">
-        Export config (JSON)
-      </label>
-      <textarea
-        id="publish_config"
-        name="publish_config"
-        rows="15"
-        class="w-full font-mono text-sm border border-slate-300 rounded p-3"
-        placeholder='[{"slug": "...", "title": "...", "target": "..."}]'>{{ publish_config }}</textarea>
-    </div>
+  <div x-data="publishConfig()" class="not-prose">
+    <form method="POST"
+          action="{{ url_for('proofing.project.publish_config', slug=project.slug) }}"
+          @submit.prevent="submitForm">
 
-    <button type="submit" class="btn btn-submit">
-      Preview Changes
-    </button>
-  </form>
+      <input type="hidden" name="publish_config" x-ref="hiddenConfig">
+
+      <div class="mb-6">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-bold">Publish configs</h3>
+          <button type="button"
+                  @click="addPublishEntry()"
+                  class="btn btn-basic text-sm">
+            + Add config
+          </button>
+        </div>
+
+        <template x-for="(entry, index) in config.publish" :key="index">
+          <div class="border border-slate-300 rounded p-4 mb-4 bg-white">
+            <div class="flex justify-between items-start mb-3">
+              <h4 class="font-medium text-slate-700" x-text="'Config ' + (index + 1)"></h4>
+              <button type="button"
+                      @click="removePublishEntry(index)"
+                      class="text-red-600 hover:text-red-800 text-sm">
+                Remove
+              </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <template x-for="field in fields" :key="field.name">
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-1">
+                    <span x-text="field.label"></span>
+                    <span x-show="field.required" class="text-red-500">*</span>
+                  </label>
+
+                  <template x-if="field.type === 'string' && !field.enum">
+                    <input type="text"
+                           x-model="entry[field.name]"
+                           :required="field.required"
+                           :placeholder="field.placeholder"
+                           class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+                  </template>
+
+                  <template x-if="field.type === 'string' && field.enum">
+                    <select x-model="entry[field.name]"
+                            :required="field.required"
+                            class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+                      <option value="">-- Select --</option>
+                      <template x-for="option in field.enum" :key="option">
+                        <option :value="option" x-text="option"></option>
+                      </template>
+                    </select>
+                  </template>
+
+                  <template x-if="field.type === 'number' || field.type === 'integer'">
+                    <input type="number"
+                           x-model="entry[field.name]"
+                           :required="field.required"
+                           :placeholder="field.placeholder"
+                           class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+                  </template>
+
+                  <template x-if="field.type === 'boolean'">
+                    <input type="checkbox"
+                           x-model="entry[field.name]"
+                           class="w-4 h-4 border border-slate-300 rounded">
+                  </template>
+
+                  <p x-show="field.description" x-text="field.description" class="text-xs text-slate-500 mt-1"></p>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <div x-show="config.publish.length === 0" class="text-center py-8 text-slate-500">
+          No publish configurations yet. Click "Add Configuration" to create one.
+        </div>
+      </div>
+
+      <div class="flex gap-3 items-center">
+        <button type="submit" class="btn btn-submit">
+          Preview Changes
+        </button>
+        <button type="button"
+                @click="showJSON = !showJSON"
+                class="btn btn-basic text-sm">
+          <span x-text="showJSON ? 'Hide JSON' : 'Show JSON'"></span>
+        </button>
+      </div>
+
+      <div x-show="showJSON" class="mt-4 bg-slate-50 rounded border border-slate-200 p-4">
+        <div class="flex justify-between items-center mb-2">
+          <h4 class="font-bold text-sm">Generated JSON</h4>
+          <button type="button" @click="copyJSON()" class="btn btn-basic text-xs">
+            Copy
+          </button>
+        </div>
+        <pre class="text-xs overflow-auto max-h-96 p-3 rounded border border-slate-300 bg-white"
+             x-text="generateJSON()"></pre>
+      </div>
+    </form>
+  </div>
 </div>
+
+<script>
+function publishConfig() {
+  return {
+    config: {
+      publish: [],
+      pages: []
+    },
+    showJSON: false,
+    fields: [],
+
+    init() {
+      this.generateFieldsFromSchema();
+
+      const configJson = {{ publish_config|tojson|safe }};
+      try {
+        const parsed = JSON.parse(configJson);
+        this.config = parsed;
+
+        if (!Array.isArray(this.config.publish)) {
+          this.config.publish = [];
+        }
+
+        if (!Array.isArray(this.config.pages)) {
+          this.config.pages = [];
+        }
+
+        this.config.publish.forEach(entry => {
+          this.fields.forEach(field => {
+            if (!(field.name in entry)) {
+              entry[field.name] = this.getDefaultValue(field);
+            }
+          });
+        });
+      } catch (e) {
+        console.error('Failed to parse config:', e);
+        this.config = { publish: [], pages: [] };
+      }
+    },
+
+    generateFieldsFromSchema() {
+      const schema = {{ publish_config_schema|tojson|safe }};
+      const properties = schema.properties || {};
+      const required = schema.required || [];
+
+      const fieldMetadata = {
+        slug: { placeholder: 'e.g., ramayana', description: 'Unique identifier for the text' },
+        title: { placeholder: 'e.g., Rāmāyaṇa', description: 'Display title for the text' },
+        target: { placeholder: 'e.g., text1', description: 'Target text field from structuring' },
+        author: { placeholder: 'e.g., Vālmīki', description: 'Author of the work' },
+        language: { placeholder: '', description: 'Primary language of the text' }
+      };
+
+      this.fields = Object.entries(properties).map(([name, prop]) => {
+        let type = prop.type;
+        let enumValues = prop.enum;
+
+        if (prop.anyOf) {
+          const nonNullType = prop.anyOf.find(t => t.type !== 'null');
+          if (nonNullType) {
+            type = nonNullType.type;
+            enumValues = nonNullType.enum;
+          }
+        }
+
+        const meta = fieldMetadata[name] || {};
+
+        return {
+          name: name,
+          label: this.titleCase(name),
+          type: type,
+          required: required.includes(name),
+          enum: enumValues,
+          placeholder: meta.placeholder || '',
+          description: prop.description || meta.description || ''
+        };
+      });
+    },
+
+    titleCase(str) {
+      return str.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    },
+
+    getDefaultValue(field) {
+      if (field.type === 'boolean') return false;
+      if (field.type === 'number' || field.type === 'integer') return null;
+      return '';
+    },
+
+    addPublishEntry() {
+      const newEntry = {};
+      this.fields.forEach(field => {
+        newEntry[field.name] = this.getDefaultValue(field);
+      });
+      this.config.publish.push(newEntry);
+    },
+
+    removePublishEntry(index) {
+      if (confirm('Remove this configuration?')) {
+        this.config.publish.splice(index, 1);
+      }
+    },
+
+    generateJSON() {
+      const cleaned = {
+        publish: this.config.publish.map(entry => {
+          const clean = {};
+          this.fields.forEach(field => {
+            const value = entry[field.name];
+            // Include required fields always & optional fields only if they have a value
+            if (field.required || (value !== '' && value !== null && value !== undefined)) {
+              clean[field.name] = value;
+            }
+          });
+          return clean;
+        }),
+        pages: this.config.pages
+      };
+      return JSON.stringify(cleaned, null, 2);
+    },
+
+    copyJSON() {
+      navigator.clipboard.writeText(this.generateJSON()).then(() => {
+        alert('Copied to clipboard!');
+      }).catch(err => {
+        console.error('Copy failed:', err);
+      });
+    },
+
+    submitForm(event) {
+      this.$refs.hiddenConfig.value = this.generateJSON();
+      event.target.submit();
+    }
+  };
+}
+</script>
 
 {% endblock %}

@@ -32,7 +32,18 @@
         <span class="ml-2 text-sm text-slate-600">{{ field.label.text }}</span>
       </div>
     {% elif field.type == 'SelectField' %}
-      {{ field(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500", disabled=read_only) }}
+      {% if fk_target and not read_only %}
+        <div class="fuzzy-select-wrapper relative" data-field-id="{{ field.id }}">
+          <input type="text"
+                 class="fuzzy-select-input w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500"
+                 placeholder="Type to search..."
+                 autocomplete="off">
+          {{ field(class="fuzzy-select-hidden", style="position: absolute; left: -9999px;") }}
+          <div class="fuzzy-select-dropdown hidden absolute z-50 w-full mt-1 bg-white border border-slate-300 rounded shadow-lg max-h-60 overflow-auto"></div>
+        </div>
+      {% else %}
+        {{ field(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500", disabled=read_only) }}
+      {% endif %}
     {% elif field.type == 'SelectMultipleField' %}
       <div class="text-xs text-slate-500 mb-1">Hold <kbd>Ctrl</kbd> (<kbd>Cmd</kbd> on Mac) to select multiple items</div>
       {{ field(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500", disabled=read_only) }}
@@ -126,5 +137,140 @@
 
     fileInput.addEventListener('change', updateFileMetadataFields);
   })();
+</script>
+{% endmacro %}
+
+{#- Fuzzy select autocomplete script -#}
+{% macro fuzzy_select_script() %}
+<script>
+(function() {
+  function initFuzzySelect(wrapper) {
+    const input = wrapper.querySelector('.fuzzy-select-input');
+    const select = wrapper.querySelector('.fuzzy-select-hidden');
+    const dropdown = wrapper.querySelector('.fuzzy-select-dropdown');
+
+    if (!input || !select || !dropdown) return;
+
+    // Build options array from select
+    const options = Array.from(select.options).map(opt => ({
+      value: opt.value,
+      text: opt.text,
+      selected: opt.selected
+    }));
+
+    // Set initial value
+    const selectedOption = options.find(opt => opt.selected);
+    if (selectedOption && selectedOption.value !== '') {
+      input.value = selectedOption.text;
+    }
+
+    // Fuzzy match function
+    function fuzzyMatch(str, pattern) {
+      if (!pattern) return true;
+
+      str = str.toLowerCase();
+      pattern = pattern.toLowerCase();
+
+      // Simple fuzzy match: check if all characters in pattern appear in order
+      let patternIdx = 0;
+      for (let i = 0; i < str.length && patternIdx < pattern.length; i++) {
+        if (str[i] === pattern[patternIdx]) {
+          patternIdx++;
+        }
+      }
+      return patternIdx === pattern.length;
+    }
+
+    // Render dropdown
+    function renderDropdown(query) {
+      const filtered = options.filter(opt =>
+        opt.value !== '' && fuzzyMatch(opt.text, query)
+      );
+
+      if (filtered.length === 0) {
+        dropdown.innerHTML = '<div class="px-3 py-2 text-slate-500 text-sm">No matches found</div>';
+      } else {
+        dropdown.innerHTML = filtered.map((opt, idx) =>
+          `<div class="fuzzy-select-option px-3 py-2 cursor-pointer hover:bg-sky-100 ${idx === 0 ? 'bg-slate-50' : ''}"
+                data-value="${opt.value}">${opt.text}</div>`
+        ).join('');
+      }
+
+      dropdown.classList.remove('hidden');
+    }
+
+    // Select option
+    function selectOption(value, text) {
+      select.value = value;
+      input.value = text;
+      dropdown.classList.add('hidden');
+    }
+
+    // Event listeners
+    input.addEventListener('focus', function() {
+      renderDropdown(input.value);
+    });
+
+    input.addEventListener('input', function() {
+      renderDropdown(input.value);
+    });
+
+    input.addEventListener('keydown', function(e) {
+      const highlighted = dropdown.querySelector('.bg-slate-50');
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (highlighted && highlighted.nextElementSibling) {
+          highlighted.classList.remove('bg-slate-50');
+          highlighted.nextElementSibling.classList.add('bg-slate-50');
+          highlighted.nextElementSibling.scrollIntoView({ block: 'nearest' });
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (highlighted && highlighted.previousElementSibling) {
+          highlighted.classList.remove('bg-slate-50');
+          highlighted.previousElementSibling.classList.add('bg-slate-50');
+          highlighted.previousElementSibling.scrollIntoView({ block: 'nearest' });
+        }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (highlighted) {
+          selectOption(highlighted.dataset.value, highlighted.textContent);
+        }
+      } else if (e.key === 'Escape') {
+        dropdown.classList.add('hidden');
+      }
+    });
+
+    dropdown.addEventListener('click', function(e) {
+      const option = e.target.closest('.fuzzy-select-option');
+      if (option) {
+        selectOption(option.dataset.value, option.textContent);
+      }
+    });
+
+    dropdown.addEventListener('mouseover', function(e) {
+      const option = e.target.closest('.fuzzy-select-option');
+      if (option) {
+        dropdown.querySelectorAll('.fuzzy-select-option').forEach(opt =>
+          opt.classList.remove('bg-slate-50')
+        );
+        option.classList.add('bg-slate-50');
+      }
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+      if (!wrapper.contains(e.target)) {
+        dropdown.classList.add('hidden');
+      }
+    });
+  }
+
+  // Initialize all fuzzy selects
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.fuzzy-select-wrapper').forEach(initFuzzySelect);
+  });
+})();
 </script>
 {% endmacro %}

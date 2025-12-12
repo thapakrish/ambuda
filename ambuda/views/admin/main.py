@@ -36,6 +36,7 @@ from ambuda.views.admin import tasks
 
 
 bp = Blueprint("admin", __name__)
+FK_DROPDOWN_LIMIT = 500
 
 
 class Category(str, Enum):
@@ -367,7 +368,9 @@ def create_model_form(model_class, obj=None):
                 choices = []
                 if column.nullable:
                     choices.append(("", "-- None --"))
-                for item in session.query(target_model_class).limit(100).all():
+                for item in (
+                    session.query(target_model_class).limit(FK_DROPDOWN_LIMIT).all()
+                ):
                     choices.append((item.id, str(item)))
 
                 def coerce_int_or_none(x):
@@ -580,6 +583,7 @@ def create_model(model_name):
 
     model_class = config.model
     form = create_model_form(model_class)
+    fk_map = get_foreign_key_info(model_class)
 
     if form.validate_on_submit():
         session = q.get_session()
@@ -600,6 +604,7 @@ def create_model(model_name):
                 models=MODELS,
                 current_model=model_name,
                 form=form,
+                fk_map=fk_map,
                 model_configs={c.model.__name__: c for c in MODEL_CONFIG},
                 models_by_category=get_models_by_category(),
             )
@@ -620,6 +625,7 @@ def create_model(model_name):
         models=MODELS,
         current_model=model_name,
         form=form,
+        fk_map=fk_map,
         model_configs={c.model.__name__: c for c in MODEL_CONFIG},
         models_by_category=get_models_by_category(),
     )

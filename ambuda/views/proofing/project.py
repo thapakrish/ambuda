@@ -1056,10 +1056,13 @@ def publish_config(slug):
         return redirect(url_for("proofing.index"))
 
     publish_config = project_config.model_dump_json(indent=2)
+    publish_config_schema = PublishConfig.model_json_schema()
+
     return render_template(
         "proofing/projects/publish.html",
         project=project_,
         publish_config=publish_config,
+        publish_config_schema=publish_config_schema,
     )
 
 
@@ -1223,6 +1226,7 @@ def publish_create(slug):
         else:
             if text.project_id != project_.id:
                 text.project_id = project_.id
+            text.title = config.title
 
         existing_sections = {s.slug for s in text.sections}
         doc_sections = {s.slug for s in document.sections}

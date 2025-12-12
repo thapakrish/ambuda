@@ -1,5 +1,5 @@
 {% extends "admin/base.html" %}
-{% from "admin/macros.html" import flash_messages, render_field %}
+{% from "admin/macros.html" import flash_messages, render_field, fuzzy_select_script %}
 
 {% block title %}{% if read_only %}View{% else %}Edit{% endif %} {{ model_name }}{% endblock %}
 
@@ -39,4 +39,6 @@
     </button>
   </form>
 </div>
+
+{{ fuzzy_select_script() }}
 {% endblock %}

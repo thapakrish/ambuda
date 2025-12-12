@@ -19,84 +19,44 @@
     <h3 class="font-bold mb-3">Bulk Tools</h3>
 
     <div class="mb-4 pb-4 border-b border-slate-300">
-      <p class="text-sm mb-2">Assign blocks to text:</p>
-      <div class="flex gap-2 items-center flex-wrap">
-        <span class="text-sm">Assign all</span>
-
-        <select x-model="bulkLang" class="border rounded px-2 py-1 text-sm">
-          <option value="">(any language)</option>
-          {% for language in languages %}
-          <option value="{{ language.code }}">{{ language.label }}</option>
-          {% endfor %}
-        </select>
-
-        <select x-model="bulkType" class="border rounded px-2 py-1 text-sm">
-          <option value="">(any type)</option>
-          {% for block_type in block_types %}
-          <option value="{{ block_type.tag }}">{{ block_type.label }}s</option>
-          {% endfor %}
-        </select>
-
-        <span class="text-sm">to text</span>
-
-        <input type="text"
-               x-model="bulkText"
-               placeholder="text name"
-               class="border rounded px-2 py-1 text-sm w-32">
-        <button @click="bulkAssignText()" class="btn btn-primary text-sm">Apply</button>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium mb-2">Select blocks:</label>
+          <input type="text"
+                 x-model="selectCommand"
+                 placeholder='e.g., lang:sa type:paragraph'
+                 class="w-full border rounded px-3 py-2 text-sm font-mono">
+          <div class="mt-2 text-xs text-slate-600 space-y-1">
+            <div><code class="bg-slate-200 px-1 rounded">lang:sa</code> - language is Sanskrit</div>
+            <div><code class="bg-slate-200 px-1 rounded">type:paragraph</code> - block type</div>
+            <div><code class="bg-slate-200 px-1 rounded">text:MyText</code> - text field equals</div>
+            <div><code class="bg-slate-200 px-1 rounded">regex:[0-9]+</code> - regex match content</div>
+            <div><code class="bg-slate-200 px-1 rounded">contains:foo</code> - substring in content</div>
+            <div><code class="bg-slate-200 px-1 rounded">lang:sa type:paragraph</code> - AND (space)</div>
+            <div><code class="bg-slate-200 px-1 rounded">lang:sa OR lang:en</code> - OR</div>
+            <div><code class="bg-slate-200 px-1 rounded">NOT type:ignore</code> - NOT</div>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-2">Change blocks:</label>
+          <input type="text"
+                 x-model="changeCommand"
+                 placeholder='e.g., text="MyText"'
+                 class="w-full border rounded px-3 py-2 text-sm font-mono">
+          <div class="mt-2 text-xs text-slate-600 space-y-1">
+            <div><code class="bg-slate-200 px-1 rounded">text="MyText"</code> - set text field</div>
+            <div><code class="bg-slate-200 px-1 rounded">text=""</code> - clear text field</div>
+            <div><code class="bg-slate-200 px-1 rounded">type=paragraph</code> - set block type</div>
+            <div><code class="bg-slate-200 px-1 rounded">type=ignore</code> - ignore block</div>
+            <div><code class="bg-slate-200 px-1 rounded">mark="*"</code> - set footnote mark</div>
+          </div>
+        </div>
       </div>
-      <p x-show="bulkStatus" x-text="bulkStatus" class="text-sm mt-2 text-slate-700"></p>
-    </div>
-
-    <div class="mb-4 pb-4 border-b border-slate-300">
-      <p class="text-sm mb-2">Assign blocks containing text:</p>
-      <div class="flex gap-2 items-center flex-wrap">
-        <span class="text-sm">Assign all blocks containing</span>
-        <input type="text"
-               x-model="bulkSearchText"
-               placeholder="search text"
-               class="border rounded px-2 py-1 text-sm w-32">
-        <span class="text-sm">to text</span>
-        <input type="text"
-               x-model="bulkSearchTargetText"
-               placeholder="text name"
-               class="border rounded px-2 py-1 text-sm w-32">
-        <button @click="bulkAssignByContent()" class="btn btn-primary text-sm">Apply</button>
+      <div class="flex gap-2 items-center mt-3">
+        <button @click="applyBulkCommand()" class="btn btn-submit text-sm">Apply</button>
+        <button @click="clearBulkCommands()" class="btn btn-basic text-sm">Clear</button>
       </div>
-      <p x-show="bulkSearchStatus" x-text="bulkSearchStatus" class="text-sm mt-2 text-slate-700"></p>
-    </div>
-
-    <div class="mb-4 pb-4 border-b border-slate-300">
-      <p class="text-sm mb-2">Rename text:</p>
-      <div class="flex gap-2 items-center flex-wrap">
-        <span class="text-sm">Rename text</span>
-        <input type="text"
-               x-model="renameOldText"
-               placeholder="old name"
-               class="border rounded px-2 py-1 text-sm w-32">
-        <span class="text-sm">to</span>
-        <input type="text"
-               x-model="renameNewText"
-               placeholder="new name"
-               class="border rounded px-2 py-1 text-sm w-32">
-        <button @click="bulkRenameText()" class="btn btn-primary text-sm">Apply</button>
-      </div>
-      <p x-show="renameStatus" x-text="renameStatus" class="text-sm mt-2 text-slate-700"></p>
-    </div>
-
-    <div class="mb-4 pb-4 border-b border-slate-300">
-      <p class="text-sm mb-2">Filter by text:</p>
-      <div class="flex gap-2 items-center">
-        <select x-model="filterText" class="border rounded px-2 py-1 text-sm">
-          <option value="">show all texts</option>
-          <template x-for="textName in getUniqueTexts()" :key="textName">
-            <option :value="textName" x-text="textName || '(empty)'"></option>
-          </template>
-        </select>
-        <span class="text-sm text-slate-600">
-          <span x-show="filterText !== ''" x-text="'Showing only: ' + (filterText || '(empty)')"></span>
-        </span>
-      </div>
+      <p x-show="bulkCommandStatus" x-text="bulkCommandStatus" class="text-sm mt-2 text-slate-700"></p>
     </div>
 
     <div>
@@ -288,16 +248,9 @@ function batchStructuring() {
       this.updateNumbering();
     },
 
-    bulkLang: '',
-    bulkType: '',
-    bulkText: '',
-    bulkStatus: '',
-    bulkSearchText: '',
-    bulkSearchTargetText: '',
-    bulkSearchStatus: '',
-    renameOldText: '',
-    renameNewText: '',
-    renameStatus: '',
+    selectCommand: '',
+    changeCommand: '',
+    bulkCommandStatus: '',
     filterText: '',
     structureJson: '',
     structureStatus: '',
@@ -325,99 +278,195 @@ function batchStructuring() {
       this.endPage = this.pages.length;
     },
 
-    bulkAssignText() {
-      const targetText = this.bulkText;
-      const lang = this.bulkLang;
-      const type = this.bulkType;
-
-      if (!targetText || targetText.trim() === '') {
-        this.bulkStatus = 'Please enter a text name';
-        return;
+    parseValue(str, pos) {
+      if (str[pos] === '"') {
+        let i = pos + 1;
+        let value = '';
+        while (i < str.length) {
+          if (str[i] === '\\' && i + 1 < str.length) {
+            value += str[i + 1];
+            i += 2;
+          } else if (str[i] === '"') {
+            return { value, endPos: i + 1 };
+          } else {
+            value += str[i];
+            i++;
+          }
+        }
+        throw new Error('Unterminated string');
+      } else {
+        let i = pos;
+        while (i < str.length && str[i] !== ' ') {
+          i++;
+        }
+        return { value: str.substring(pos, i), endPos: i };
       }
-
-      let count = 0;
-      this.pages.forEach(page => {
-        page.blocks.forEach(block => {
-          const langMatch = !lang || block.lang === lang;
-          const typeMatch = !type || block.type === type;
-
-          if (langMatch && typeMatch) {
-            block.text = targetText.trim();
-            count++;
-          }
-        });
-      });
-
-      this.bulkStatus = `Assigned ${count} blocks to text "${targetText}"`;
-
-      this.pages.forEach(page => {
-        page.blocks.forEach((block, index) => {
-          if (block.manualNumber && block.number && block.number.trim() !== '') {
-            this.propagateNumbering(page, index);
-          }
-        });
-      });
     },
 
-    bulkAssignByContent() {
-      const searchText = this.bulkSearchText;
-      const targetText = this.bulkSearchTargetText;
+    tokenizeCommand(command) {
+      const tokens = [];
+      let i = 0;
+      while (i < command.length) {
+        while (i < command.length && command[i] === ' ') i++;
+        if (i >= command.length) break;
 
-      if (!searchText || searchText.trim() === '') {
-        this.bulkSearchStatus = 'Please enter search text';
-        return;
-      }
-
-      if (!targetText || targetText.trim() === '') {
-        this.bulkSearchStatus = 'Please enter a text name';
-        return;
-      }
-
-      let count = 0;
-      const searchLower = searchText.trim().toLowerCase();
-
-      this.pages.forEach(page => {
-        page.blocks.forEach(block => {
-          if (block.content && block.content.toLowerCase().includes(searchLower)) {
-            block.text = targetText.trim();
-            count++;
+        if (command.substring(i).startsWith('OR')) {
+          tokens.push({ type: 'OR' });
+          i += 2;
+        } else if (command.substring(i).startsWith('NOT')) {
+          tokens.push({ type: 'NOT' });
+          i += 3;
+        } else {
+          let j = i;
+          while (j < command.length && command[j] !== ':' && command[j] !== '=' && command[j] !== ' ') {
+            j++;
           }
-        });
-      });
+          const key = command.substring(i, j);
 
-      this.bulkSearchStatus = `Assigned ${count} blocks containing "${searchText}" to text "${targetText}"`;
-      this.updateNumbering();
+          if (j < command.length && (command[j] === ':' || command[j] === '=')) {
+            const op = command[j];
+            const { value, endPos } = this.parseValue(command, j + 1);
+            tokens.push({ type: 'PRED', key, op, value });
+            i = endPos;
+          } else {
+            throw new Error(`Invalid predicate at position ${i}`);
+          }
+        }
+      }
+      return tokens;
     },
 
-    bulkRenameText() {
-      const oldText = this.renameOldText;
-      const newText = this.renameNewText;
-
-      if (!oldText || oldText.trim() === '') {
-        this.renameStatus = 'Please enter old text name';
-        return;
-      }
-
-      if (!newText || newText.trim() === '') {
-        this.renameStatus = 'Please enter new text name';
-        return;
-      }
-
-      let count = 0;
-      const oldTextTrimmed = oldText.trim();
-      const newTextTrimmed = newText.trim();
-
-      this.pages.forEach(page => {
-        page.blocks.forEach(block => {
-          if (block.text === oldTextTrimmed) {
-            block.text = newTextTrimmed;
-            count++;
+    evalPredicate(pred, block) {
+      switch (pred.key) {
+        case 'lang':
+          return block.lang === pred.value;
+        case 'type':
+          return block.type === pred.value;
+        case 'text':
+          return (block.text || '') === pred.value;
+        case 'regex':
+          try {
+            return new RegExp(pred.value).test(block.content);
+          } catch (e) {
+            throw new Error(`Invalid regex: ${pred.value}`);
           }
-        });
-      });
+        case 'contains':
+          return (block.content || '').includes(pred.value);
+        default:
+          throw new Error(`Unknown predicate: ${pred.key}`);
+      }
+    },
 
-      this.renameStatus = `Renamed ${count} blocks from "${oldText}" to "${newText}"`;
-      this.updateNumbering();
+    evalSelection(tokens, block) {
+      if (tokens.length === 0) return true;
+
+      let result = null;
+      let expectingOperand = true;
+      let negate = false;
+
+      for (const token of tokens) {
+        if (token.type === 'OR') {
+          if (expectingOperand) throw new Error('Unexpected OR');
+          expectingOperand = true;
+        } else if (token.type === 'NOT') {
+          if (!expectingOperand) throw new Error('Unexpected NOT');
+          negate = true;
+        } else if (token.type === 'PRED') {
+          if (!expectingOperand) {
+            // Implicit AND
+            if (result !== null) {
+              let predResult = this.evalPredicate(token, block);
+              if (negate) predResult = !predResult;
+              result = result && predResult;
+              negate = false;
+            } else {
+              result = this.evalPredicate(token, block);
+              if (negate) result = !result;
+              negate = false;
+            }
+          } else {
+            // After OR or at start
+            let predResult = this.evalPredicate(token, block);
+            if (negate) predResult = !predResult;
+            if (result === null) {
+              result = predResult;
+            } else {
+              result = result || predResult;
+            }
+            negate = false;
+            expectingOperand = false;
+          }
+        }
+      }
+
+      return result !== null ? result : true;
+    },
+
+    applyChange(tokens, block) {
+      for (const token of tokens) {
+        if (token.type !== 'PRED' || token.op !== '=') {
+          throw new Error('Change command must use key=value format');
+        }
+
+        switch (token.key) {
+          case 'text':
+            block.text = token.value;
+            break;
+          case 'type':
+            block.type = token.value;
+            break;
+          case 'mark':
+            if (block.type === 'footnote') {
+              block.mark = token.value;
+            }
+            break;
+          default:
+            throw new Error(`Unknown change key: ${token.key}`);
+        }
+      }
+    },
+
+    applyBulkCommand() {
+      try {
+        const selectTokens = this.selectCommand.trim() ? this.tokenizeCommand(this.selectCommand.trim()) : [];
+        const changeTokens = this.changeCommand.trim() ? this.tokenizeCommand(this.changeCommand.trim()) : [];
+
+        if (selectTokens.length === 0 && changeTokens.length === 0) {
+          this.bulkCommandStatus = 'Please enter a selection or change command';
+          return;
+        }
+
+        let matchCount = 0;
+        let changeCount = 0;
+
+        this.pages.forEach(page => {
+          page.blocks.forEach(block => {
+            const matches = this.evalSelection(selectTokens, block);
+            if (matches) {
+              matchCount++;
+              if (changeTokens.length > 0) {
+                this.applyChange(changeTokens, block);
+                changeCount++;
+              }
+            }
+          });
+        });
+
+        if (changeTokens.length > 0) {
+          this.bulkCommandStatus = `Changed ${changeCount} blocks (matched ${matchCount})`;
+          this.updateNumbering();
+        } else {
+          this.bulkCommandStatus = `Matched ${matchCount} blocks`;
+        }
+      } catch (e) {
+        this.bulkCommandStatus = `Error: ${e.message}`;
+      }
+    },
+
+    clearBulkCommands() {
+      this.selectCommand = '';
+      this.changeCommand = '';
+      this.bulkCommandStatus = '';
     },
 
     getUniqueTexts(page) {

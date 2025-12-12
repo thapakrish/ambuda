@@ -123,6 +123,7 @@ class Project(Base):
     def __str__(self):
         return self.slug
 
+
 @event.listens_for(Project, "before_insert")
 @event.listens_for(Project, "before_update")
 def validate_config(mapper, connection, project):
@@ -131,7 +132,6 @@ def validate_config(mapper, connection, project):
             ProjectConfig.model_validate_json(project.config)
         except Exception as e:
             raise ValueError(f"Project.config must be a valid JSON document: {e}")
-        
 
 
 class Page(Base):
