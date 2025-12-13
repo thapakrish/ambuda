@@ -107,52 +107,6 @@ def test_stats(moderator_client, rama_client):
     assert resp.status_code == 302
 
 
-def test_search(rama_client):
-    resp = rama_client.get("/proofing/test-project/search")
-    assert "Search:" in resp.text
-
-
-def test_search__bad_project(rama_client):
-    resp = rama_client.get("/proofing/unknown/search")
-    assert resp.status_code == 404
-
-
-def test_replace(moderator_client):
-    resp = moderator_client.get("/proofing/test-project/replace")
-    assert "Replace:" in resp.text
-
-
-def test_replace_post(moderator_client):
-    resp = moderator_client.post(
-        "/proofing/test-project/replace",
-        data={
-            "query": "the",
-            "replace": "the",
-        },
-    )
-    assert resp.status_code == 200
-
-
-def test_replace__unauth(client):
-    resp = client.get("/proofing/test-project/replace")
-    assert resp.status_code == 302
-
-
-def test_replace__bad_project(rama_client):
-    resp = rama_client.get("/proofing/unknown/replace")
-    assert resp.status_code == 404
-
-
-def test_submit_changes(moderator_client):
-    query = "test_query"
-    replace = "test_replace"
-    form_data = {"query": query, "replace": replace}
-    resp = moderator_client.post(
-        "/proofing/test-project/submit-changes", data=form_data
-    )
-    assert "Changes:" in resp.text
-
-
 def test_submit_changes_post(moderator_client):
     resp = moderator_client.post(
         "/proofing/test-project/submit-changes",
@@ -170,11 +124,6 @@ def test_submit_changes_post(moderator_client):
 def test_submit_unauth(client):
     resp = client.get("/proofing/test-project/submit-changes")
     assert resp.status_code == 302
-
-
-def test_confirm_changes(moderator_client):
-    resp = moderator_client.get("/proofing/test-project/confirm_changes")
-    assert "replace" in resp.text
 
 
 def test_confirm_unauth(client):

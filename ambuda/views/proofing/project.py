@@ -10,6 +10,7 @@ from flask import (
     Blueprint,
     current_app,
     flash,
+    jsonify,
     make_response,
     render_template,
     request,
@@ -367,148 +368,6 @@ def stats(slug):
     )
 
 
-@bp.route("/<slug>/search")
-@login_required
-def search(slug):
-    """Search across all of the project's pages.
-
-    This is useful for finding typos that repeat across the project.
-    """
-    project_ = q.project(slug)
-    if project_ is None:
-        abort(404)
-
-    form = SearchForm(request.args)
-    if not form.validate():
-        return render_template(
-            "proofing/projects/search.html", project=project_, form=form
-        )
-
-    query = form.query.data
-    results = []
-    for page_ in project_.pages:
-        if not page_.revisions:
-            continue
-
-        matches = []
-
-        latest = page_.revisions[-1]
-        for line in latest.content.splitlines():
-            if query in line:
-                matches.append(
-                    {
-                        "text": escape(line).replace(
-                            query, Markup(f"<mark>{escape(query)}</mark>")
-                        ),
-                    }
-                )
-        if matches:
-            results.append(
-                {
-                    "slug": page_.slug,
-                    "matches": matches,
-                }
-            )
-    return render_template(
-        "proofing/projects/search.html",
-        project=project_,
-        form=form,
-        query=query,
-        results=results,
-    )
-
-
-def _replace_text(project_, replace_form: ReplaceForm, query: str, replace: str):
-    """
-    Gather all matches for the "query" string and pair them the "replace" string.
-    """
-
-    results = []
-
-    query_pattern = re.compile(
-        query, re.UNICODE
-    )  # Compile the regex pattern with Unicode support
-
-    LOG.debug(f"Search/Replace text with {query} and {replace}")
-    for page_ in project_.pages:
-        if not page_.revisions:
-            continue
-        matches = []
-        latest = page_.revisions[-1]
-        LOG.debug(f"{__name__}: {page_.slug}")
-        for line_num, line in enumerate(latest.content.splitlines()):
-            if query_pattern.search(line):
-                try:
-                    marked_query = query_pattern.sub(
-                        lambda m: Markup(f"<mark>{escape(m.group(0))}</mark>"), line
-                    )
-                    marked_replace = query_pattern.sub(
-                        Markup(f"<mark>{escape(replace)}</mark>"), line
-                    )
-                    LOG.debug(f"Search/Replace > marked query: {marked_query}")
-                    LOG.debug(f"Search/Replace > marked replace: {marked_replace}")
-                    matches.append(
-                        {
-                            "query": marked_query,
-                            "replace": marked_replace,
-                            "checked": False,
-                            "line_num": line_num,
-                        }
-                    )
-                except TimeoutError:
-                    # Handle the timeout for regex operation, e.g., log a warning or show an error message
-                    LOG.warning(
-                        f"Regex operation timed out for line {line_num}: {line}"
-                    )
-
-        if matches:
-            results.append(
-                {
-                    "slug": page_.slug,
-                    "matches": matches,
-                }
-            )
-
-    return results
-
-
-@bp.route("/<slug>/replace", methods=["GET", "POST"])
-@p2_required
-def replace(slug):
-    """Search and replace a string across all of the project's pages.
-
-    This is useful to replace a string across the project in one shot.
-    """
-    project_ = q.project(slug)
-    if project_ is None:
-        abort(404)
-
-    form = ReplaceForm(request.form)
-    if not form.validate():
-        invalid_keys = list(form.errors.keys())
-        LOG.debug(f"Invalid form - {request.method}, invalid keys: {invalid_keys}")
-        return render_template(
-            "proofing/projects/replace.html", project=project_, form=ReplaceForm()
-        )
-
-    # search for "query" string and replace with "update" string
-    query = form.query.data
-    replace = form.replace.data
-    results = _replace_text(project_, replace_form=form, query=query, replace=replace)
-    num_matches = sum(len(r["matches"]) for r in results)
-
-    return render_template(
-        "proofing/projects/replace.html",
-        project=project_,
-        form=form,
-        submit_changes_form=PreviewChangesForm(),
-        query=query,
-        replace=replace,
-        num_matches=num_matches,
-        results=results,
-    )
-
-
 def _select_changes(project_, selected_keys, query: str, replace: str):
     """
     Mark "query" strings
@@ -772,10 +631,12 @@ class BlockDiff(BaseModel):
     lang: str | None = None
     mark: str | None = None
     merge_next: bool = False
+    index: int | None = None  # Original block index for existing blocks
 
 
 class PageDiff(BaseModel):
     slug: str
+    version: int
     blocks: list[BlockDiff]
     ignore: bool = False
 
@@ -785,37 +646,30 @@ class ProjectDiff(BaseModel):
     pages: list[PageDiff]
 
 
-@bp.route("/<slug>/batch-structuring", methods=["GET", "POST"])
+@bp.route("/<slug>/batch-editing", methods=["GET", "POST"])
 @p2_required
-def batch_structuring(slug):
+def batch_editing(slug):
     project_ = q.project(slug)
     if project_ is None:
         abort(404)
 
     if request.method == "POST":
-        # Get JSON data from form field
-        structure_data = request.form.get("structure_data")
-        if not structure_data:
-            flash("No structure data provided", "error")
-            return redirect(url_for("proofing.project.batch_structuring", slug=slug))
+        data = request.form.get("structure_data")
+        if not data:
+            flash("No data provided", "error")
+            return redirect(url_for("proofing.project.batch_editing", slug=slug))
 
         try:
-            data = json.loads(structure_data)
+            project_diff = ProjectDiff.model_validate_json(data)
         except json.JSONDecodeError:
             flash("Invalid structure data format", "error")
-            return redirect(url_for("proofing.project.batch_structuring", slug=slug))
-
-        if not data or "pages" not in data:
-            flash("Invalid data format: missing pages", "error")
-            return redirect(url_for("proofing.project.batch_structuring", slug=slug))
-
-        project_diff = ProjectDiff.model_validate(data)
+            return redirect(url_for("proofing.project.batch_editing", slug=slug))
 
         # Group all batch changes with a batch ID so we can revert/dedupe later.
         session = q.get_session()
         revision_batch = db.RevisionBatch(user_id=current_user.id)
         session.add(revision_batch)
-        session.flush()  # Get the batch ID
+        session.flush()
 
         changed_pages = []
         unchanged_pages = []
@@ -850,8 +704,9 @@ def batch_structuring(slug):
             for i, block_data in enumerate(page_diff.blocks):
                 content = block_data.content
                 if content is None:
-                    if i < len(old_structured_page.blocks):
-                        content = old_structured_page.blocks[i].content
+                    source_index = block_data.index
+                    if source_index is not None:
+                        content = old_structured_page.blocks[source_index].content
                     else:
                         content = ""
 
@@ -877,6 +732,7 @@ def batch_structuring(slug):
                 continue
 
             new_structured_page = ProofPage(blocks=new_blocks, id=page.id)
+
             new_content = new_structured_page.to_xml_string()
             if old_content == new_content:
                 unchanged_pages.append(page_slug)
@@ -887,7 +743,7 @@ def batch_structuring(slug):
                     page=page,
                     summary="Batch structuring",
                     content=new_content,
-                    version=page.version,
+                    version=page_diff.version,
                     author_id=current_user.id,
                     status_id=page.status_id,
                     batch_id=revision_batch.id,
@@ -918,7 +774,6 @@ def batch_structuring(slug):
         else:
             flash(message, "info")
 
-        print(errors)
         return redirect(url_for("proofing.project.summary", slug=slug))
 
     pages_with_content = []
@@ -930,17 +785,60 @@ def batch_structuring(slug):
             pages_with_content.append(
                 {
                     "slug": page.slug,
+                    "version": page.version,
                     "blocks": structured_data.blocks,
                 }
             )
 
     return render_template(
-        "proofing/projects/batch-structuring.html",
+        "proofing/projects/batch-editing.html",
         project=project_,
         pages_with_content=pages_with_content,
         block_types=BLOCK_TYPES,
         languages=LANGUAGES,
     )
+
+
+@bp.route("/<slug>/parse-content", methods=["POST"])
+@login_required
+def parse_content(slug):
+    """Parse content and return structured blocks.
+
+    This is a convenience API for the batch editing workflow.
+    """
+    project_ = q.project(slug)
+    if project_ is None:
+        abort(404)
+
+    data = request.get_json()
+    if not data or "content" not in data:
+        return jsonify({"error": "No content provided"}), 400
+
+    content = data["content"]
+    if not content or not content.strip():
+        return jsonify({"error": "Content is empty"}), 400
+
+    try:
+        # page_id is not used, so use a dummy value
+        parsed_page = ProofPage.from_content_and_page_id(content, page_id=0)
+        blocks = []
+        for block in parsed_page.blocks:
+            blocks.append(
+                {
+                    "type": block.type,
+                    "content": block.content,
+                    "lang": block.lang,
+                    "text": block.text,
+                    "n": block.n,
+                    "mark": block.mark,
+                    "merge_next": block.merge_next,
+                }
+            )
+
+        return jsonify({"blocks": blocks})
+    except Exception as e:
+        LOG.error(f"Failed to parse content: {e}")
+        return jsonify({"error": f"Failed to parse content: {str(e)}"}), 500
 
 
 @bp.route("/<slug>/batch-llm-structuring", methods=["GET", "POST"])

@@ -1,0 +1,949 @@
+{% extends 'proofing/base-sidebar.html' %}
+{% import "macros/components.html" as components %}
+{% import "macros/proofing.html" as m %}
+
+
+{% block title %}Batch Editing: {{ project.display_title }} | Ambuda{% endblock %}
+
+
+{% block sidebar %}{{ m.main_nav('projects', current_user=current_user) }}{% endblock %}
+
+
+{% block content %}
+{{ components.flash_messages() }}
+
+{{ m.project_header_nested('Batch Editing', project) }}
+{{ m.project_tabs(project=project, active='edit') }}
+<div x-data="batchEditing()" class="prose max-w-none">
+  <div class="bg-slate-100 p-4 rounded mb-4 not-prose">
+    <h3 class="font-bold mb-3">Bulk Tools</h3>
+
+    <div class="mb-4 pb-4 border-b border-slate-300">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium mb-2">Select blocks:</label>
+          <input type="text"
+                 x-model="selectCommand"
+                 placeholder='e.g., lang:sa type:paragraph'
+                 class="w-full border rounded px-3 py-2 text-sm font-mono">
+          <div class="mt-2 text-xs text-slate-600 space-y-1">
+            <div><code class="bg-slate-200 px-1 rounded">lang:sa</code> - language is Sanskrit</div>
+            <div><code class="bg-slate-200 px-1 rounded">type:paragraph</code> - block type</div>
+            <div><code class="bg-slate-200 px-1 rounded">text:MyText</code> - text field equals</div>
+            <div><code class="bg-slate-200 px-1 rounded">regex:[0-9]+</code> - regex match content</div>
+            <div><code class="bg-slate-200 px-1 rounded">contains:foo</code> - substring in content</div>
+            <div><code class="bg-slate-200 px-1 rounded">lang:sa type:paragraph</code> - AND (space)</div>
+            <div><code class="bg-slate-200 px-1 rounded">lang:sa OR lang:en</code> - OR</div>
+            <div><code class="bg-slate-200 px-1 rounded">NOT type:ignore</code> - NOT</div>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-2">Change blocks:</label>
+          <input type="text"
+                 x-model="changeCommand"
+                 placeholder='e.g., text="MyText"'
+                 class="w-full border rounded px-3 py-2 text-sm font-mono">
+          <div class="mt-2 text-xs text-slate-600 space-y-1">
+            <div><code class="bg-slate-200 px-1 rounded">text="MyText"</code> - set text field</div>
+            <div><code class="bg-slate-200 px-1 rounded">text=""</code> - clear text field</div>
+            <div><code class="bg-slate-200 px-1 rounded">type=paragraph</code> - set block type</div>
+            <div><code class="bg-slate-200 px-1 rounded">type=ignore</code> - ignore block</div>
+            <div><code class="bg-slate-200 px-1 rounded">mark="*"</code> - set footnote mark</div>
+            <div><code class="bg-slate-200 px-1 rounded">replace="pattern" with="replacement"</code> - regex replace (shows preview)</div>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-2 items-center mt-3">
+        <button @click="applyBulkCommand()" class="btn btn-submit text-sm">Apply</button>
+        <button @click="clearBulkCommands()" class="btn btn-basic text-sm">Clear</button>
+        <label x-show="replaceMode" class="flex items-center gap-1 ml-2">
+          <input type="checkbox" x-model="replaceGlobal" class="w-4 h-4">
+          <span class="text-xs">Global</span>
+        </label>
+        <label x-show="replaceMode" class="flex items-center gap-1">
+          <input type="checkbox" x-model="replaceCaseInsensitive" class="w-4 h-4">
+          <span class="text-xs">Case insensitive</span>
+        </label>
+      </div>
+      <p x-show="bulkCommandStatus" x-text="bulkCommandStatus" class="text-sm mt-2 text-slate-700"></p>
+
+      <div x-show="replacePreview.length > 0" class="mt-4 bg-white border border-amber-300 rounded p-3 max-h-96 overflow-y-auto">
+        <div class="flex justify-between items-center mb-2 sticky top-0 bg-white pb-2 border-b border-amber-200">
+          <h5 class="font-semibold text-sm text-amber-900">Preview: <span x-text="replacePreview.length"></span> block(s) will be changed</h5>
+          <div class="flex gap-2">
+            <button @click="confirmReplace()" class="btn btn-submit text-sm bg-amber-600 hover:bg-amber-700">Confirm & Apply</button>
+            <button @click="cancelReplace()" class="btn btn-basic text-sm">Cancel</button>
+          </div>
+        </div>
+        <template x-for="(item, idx) in replacePreview" :key="idx">
+          <div class="mb-3 pb-3 border-b border-slate-200 last:border-b-0">
+            <div class="text-xs text-slate-500 mb-1">
+              Page <span x-text="item.pageSlug"></span>, Block <span x-text="item.blockIndex"></span>
+              <span class="ml-2 text-slate-400">type=<span x-text="item.type"></span></span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <div class="font-medium text-red-700 mb-1">Before:</div>
+                <div class="bg-red-50 border border-red-200 rounded p-2 font-mono whitespace-pre-wrap" x-text="item.before"></div>
+              </div>
+              <div>
+                <div class="font-medium text-green-700 mb-1">After:</div>
+                <div class="bg-green-50 border border-green-200 rounded p-2 font-mono whitespace-pre-wrap" x-text="item.after"></div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <div>
+      <p class="text-sm mb-2">Filter by page range:</p>
+      <div class="flex gap-4 items-center">
+        <label class="flex items-center gap-2">
+          <span class="text-sm">From:</span>
+          <input type="number"
+                 x-model.number="startPage"
+                 min="1"
+                 class="border rounded px-2 py-1 w-24">
+        </label>
+        <label class="flex items-center gap-2">
+          <span class="text-sm">To:</span>
+          <input type="number"
+                 x-model.number="endPage"
+                 min="1"
+                 class="border rounded px-2 py-1 w-24">
+        </label>
+        <button @click="resetFilter()" class="btn btn-basic text-sm">Reset</button>
+      </div>
+      <p class="text-sm text-slate-600 mt-2">
+        Showing <span x-text="filteredPages().length"></span> of {{ pages_with_content|length }} pages
+      </p>
+    </div>
+  </div>
+
+  <template x-for="item in filteredPages()" :key="item.slug">
+    <div class="border-t border-slate-200 mt-4 pt-2">
+      <div class="flex items-center gap-2 mb-2">
+        <a :href="'{{ url_for('proofing.page.edit', project_slug=project.slug, page_slug='') }}' + item.slug"
+           target="_blank"
+           class="text-xs font-medium text-slate-400 hover:text-blue-600 hover:underline"
+           x-text="'Page ' + item.slug"></a>
+        <label class="flex items-center gap-1 cursor-pointer hover:bg-slate-100 px-1 py-0.5 rounded">
+          <input type="checkbox"
+                 x-model="item.ignorePage"
+                 class="w-3 h-3">
+          <span class="text-xs text-slate-500">Ignore page</span>
+        </label>
+      </div>
+
+      <div class="space-y-3" x-show="!item.ignorePage">
+        <template x-for="(block, index) in item.blocks" :key="index">
+          <div x-show="filterText === '' || (block.text || '') === filterText"
+               class="border-l-4 pl-4 transition-colors"
+               :class="[blockTypeColors[block.type] || 'border-gray-400', block.merge_next && 'bg-yellow-50 !border-dashed']">
+            <div class="flex gap-1 mb-1 px-1.5 py-1 text-xs text-slate-500 items-center bg-slate-50 rounded leading-tight">
+              {# block tag #}
+              <select x-model="block.type"
+                      class="border border-slate-300 bg-white text-xs font-medium cursor-pointer hover:bg-slate-100 rounded px-1 py-0"
+                      @change="updateNumbering">
+                {% for block_type in block_types %}
+                <option value="{{ block_type.tag }}">{{ block_type.label }}</option>
+                {% endfor %}
+              </select>
+
+              <div class="flex items-center gap-0.5">
+                <span class="text-slate-400 text-[11px]">text=</span>
+                <input type="text"
+                       x-model="block.text"
+                       :list="'text-list-' + item.slug"
+                       @change="updateNumbering"
+                       class="border border-slate-300 bg-transparent text-xs text-slate-600 w-20 px-1 py-0 hover:bg-slate-100 rounded"
+                       placeholder="text">
+                <datalist :id="'text-list-' + item.slug">
+                  <template x-for="textName in getUniqueTexts(item)" :key="textName">
+                    <option :value="textName"></option>
+                  </template>
+                </datalist>
+              </div>
+
+              <template x-if="block.type === 'footnote'">
+                <div class="flex items-center gap-0.5">
+                  <span class="text-slate-400 text-[11px]">mark=</span>
+                  <input type="text"
+                         x-model="block.mark"
+                         class="border border-slate-300 bg-transparent font-mono text-xs text-slate-600 w-16 px-1 py-0 hover:bg-slate-100 rounded"
+                         placeholder="mark">
+                </div>
+              </template>
+
+              <template x-if="block.type !== 'footnote'">
+                <div class="flex items-center gap-0.5">
+                  <span class="text-slate-400 text-[11px]">n=</span>
+                  <input type="text"
+                         x-model="block.n"
+                         @change="block.manualNumber = true; propagateNumbering(item, index)"
+                         :class="block.manualNumber ?
+                           'border border-slate-300 bg-amber-200 font-mono text-xs text-slate-800 w-12 px-1 py-0 hover:bg-amber-300 rounded' :
+                           'border border-slate-300 bg-transparent font-mono text-xs text-slate-600 w-12 px-1 py-0 hover:bg-slate-100 rounded'"
+                         placeholder="#">
+                </div>
+              </template>
+
+              <div class="flex items-center gap-0.5">
+                <span class="text-slate-400 text-[11px]">detected_lang=</span>
+                <span class="text-xs text-slate-600" x-text="block.lang || ''"></span>
+              </div>
+
+              <label class="flex items-center gap-0.5 cursor-pointer hover:bg-slate-100 px-1 rounded">
+                <input type="checkbox"
+                       x-model="block.merge_next"
+                       @change="updateNumbering"
+                       class="w-3 h-3">
+                <span class="text-[11px]">merge</span>
+              </label>
+
+              <div class="ml-auto relative" @click.away="openDropdown = null">
+                <button @click="openDropdown = (openDropdown === `${item.slug}-${index}` ? null : `${item.slug}-${index}`)"
+                        type="button"
+                        class="text-[11px] px-2 py-0.5 bg-slate-200 hover:bg-slate-300 rounded border border-slate-400"
+                        title="Block actions">
+                  ⋯
+                </button>
+                <div x-show="openDropdown === `${item.slug}-${index}`"
+                     x-transition
+                     class="absolute right-0 mt-1 bg-white border border-slate-300 rounded shadow-lg z-10 min-w-[140px]">
+                  <button @click="addBlockBelow(item, index); openDropdown = null"
+                          type="button"
+                          class="w-full text-left px-3 py-2 text-xs hover:bg-slate-100 flex items-center gap-2">
+                    <span class="text-green-600">+</span> Add below
+                  </button>
+                  <button @click="restructureBlock(item, index); openDropdown = null"
+                          type="button"
+                          class="w-full text-left px-3 py-2 text-xs hover:bg-slate-100 flex items-center gap-2 border-t border-slate-200">
+                    <span class="text-blue-600">↻</span> Re-structure
+                  </button>
+                  <button @click="removeBlock(item, index); openDropdown = null"
+                          type="button"
+                          class="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2 border-t border-slate-200">
+                    <span>×</span> Remove
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="relative">
+              <textarea x-model="block.content"
+                        @input="onContentChange(block)"
+                        :class="block.contentChanged ?
+                          'w-full text-base p-2 border-2 border-red-300 bg-red-50 rounded font-normal resize-y min-h-[3rem]' :
+                          'w-full text-base p-2 border border-slate-200 bg-white rounded font-normal resize-y min-h-[3rem]'"
+                        :rows="block.content.split('\n').length"></textarea>
+              <button x-show="block.contentChanged"
+                      @click="resetContent(block)"
+                      class="absolute top-2 right-2 px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors">
+                Reset
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  <form method="POST" action="{{ url_for('proofing.project.batch_editing', slug=project.slug) }}" class="mt-8 border-t border-slate-200 pt-4 not-prose">
+    <input type="hidden" name="structure_data" x-ref="structureData">
+    <div class="flex gap-2 items-center mb-4">
+      <button @click.prevent="submitStructure()"
+              :disabled="isSubmitting"
+              type="submit"
+              class="btn btn-submit"
+              :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }">
+        Structure page
+      </button>
+      <button @click.prevent="previewStructure()" type="button" class="btn btn-basic">
+        Preview JSON
+      </button>
+      <button @click.prevent="submitChangedOnly()"
+              :disabled="isSubmitting"
+              type="button"
+              class="btn btn-basic"
+              :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }">
+        Save only my changes
+      </button>
+      <span x-show="structureStatus"
+            x-text="structureStatus"
+            class="text-sm"
+            :class="statusSuccess ? 'text-green-600' : 'text-slate-600'"></span>
+    </div>
+
+    <div x-show="structureJson" class="bg-slate-50 rounded border border-slate-200 p-4">
+      <div class="flex justify-between items-center mb-2">
+        <h4 class="font-bold text-sm">Generated Structure (JSON)</h4>
+        <button @click="copyToClipboard()" type="button" class="btn btn-basic text-xs">Copy to clipboard</button>
+      </div>
+      <pre class="text-xs overflow-auto max-h-96 p-3 rounded border border-slate-300"
+           x-text="structureJson"></pre>
+    </div>
+  </form>
+</div>
+
+<script>
+function batchEditing() {
+  return {
+    startPage: 1,
+    endPage: {{ pages_with_content|length }},
+    pages: {{ pages_with_content|tojson }},
+
+    init() {
+      this.pages.forEach(page => {
+        page.ignorePage = false;
+        page.blocks.forEach((block, index) => {
+          this.initializeBlock(block, index);
+        });
+      });
+      this.updateNumbering();
+    },
+
+    selectCommand: '',
+    changeCommand: '',
+    bulkCommandStatus: '',
+    filterText: '',
+    structureJson: '',
+    structureStatus: '',
+    statusSuccess: false,
+    isSubmitting: false,
+
+    replaceMode: false,
+    replaceGlobal: true,
+    replaceCaseInsensitive: false,
+    replacePreview: [],
+    pendingReplaceTokens: null,
+    pendingSelectTokens: null,
+    openDropdown: null,
+    numberingTimeout: null,
+
+    blockTypeColors: {
+      'p': 'border-blue-400',
+      'verse': 'border-purple-400',
+      'heading': 'border-orange-400',
+      'title': 'border-indigo-400',
+      'subtitle': 'border-pink-400',
+      'footnote': 'border-green-400',
+      'trailer': 'border-teal-400',
+      'ignore': 'border-gray-300'
+    },
+
+    initializeBlock(block, index) {
+      if (block.type === 'footnote' && !block.mark) block.mark = '';
+
+      Object.assign(block, {
+        originalContent: block.content,
+        originalType: block.type,
+        originalText: block.text || '',
+        originalMark: block.mark || '',
+        originalMergeNext: block.merge_next || false,
+        originalN: block.n || '',
+        contentChanged: false,
+        manualNumber: !!block.n,
+        originalIndex: index
+      });
+    },
+
+    createBlock(overrides = {}) {
+      return Object.assign({
+        type: 'p',
+        content: '',
+        text: '',
+        n: null,
+        mark: '',
+        lang: null,
+        merge_next: false,
+        originalContent: '',
+        originalType: 'p',
+        originalText: '',
+        originalMark: '',
+        originalMergeNext: false,
+        originalN: '',
+        contentChanged: false,
+        manualNumber: false,
+        originalIndex: null
+      }, overrides);
+    },
+
+    blockToData(block, includeAllNumbers = false) {
+      const data = {
+        type: block.type,
+        text: block.text || null,
+        merge_next: block.merge_next || false,
+        n: (includeAllNumbers || block.manualNumber) ? (block.n || null) : null,
+        mark: block.mark || null,
+        index: block.originalIndex
+      };
+
+      if (block.originalIndex === null || block.contentChanged) {
+        data.content = block.content;
+      }
+
+      return data;
+    },
+
+    onContentChange(block) {
+      block.contentChanged = block.content !== block.originalContent;
+    },
+
+    resetContent(block) {
+      block.content = block.originalContent;
+      block.contentChanged = false;
+    },
+
+    filteredPages() {
+      return this.pages.filter(item => {
+        const pageNum = parseInt(item.slug);
+        return pageNum >= this.startPage && pageNum <= this.endPage;
+      });
+    },
+
+    resetFilter() {
+      this.startPage = 1;
+      this.endPage = this.pages.length;
+    },
+
+    parseValue(str, pos) {
+      if (str[pos] !== '"') {
+        const end = str.indexOf(' ', pos);
+        return { value: str.substring(pos, end === -1 ? str.length : end), endPos: end === -1 ? str.length : end };
+      }
+
+      let value = '', i = pos + 1;
+      while (i < str.length) {
+        if (str[i] === '\\' && i + 1 < str.length) {
+          value += str[i + 1];
+          i += 2;
+        } else if (str[i] === '"') {
+          return { value, endPos: i + 1 };
+        } else {
+          value += str[i++];
+        }
+      }
+      throw new Error('Unterminated string');
+    },
+
+    tokenizeCommand(command) {
+      const tokens = [];
+      let i = 0;
+
+      while (i < command.length) {
+        while (command[i] === ' ') i++;
+        if (i >= command.length) break;
+
+        const remaining = command.substring(i);
+        if (remaining.startsWith('OR')) {
+          tokens.push({ type: 'OR' });
+          i += 2;
+        } else if (remaining.startsWith('NOT')) {
+          tokens.push({ type: 'NOT' });
+          i += 3;
+        } else {
+          const opIdx = remaining.search(/[:=]/);
+          if (opIdx === -1) throw new Error(`Invalid predicate at position ${i}`);
+
+          const key = remaining.substring(0, opIdx);
+          const op = remaining[opIdx];
+          const { value, endPos } = this.parseValue(command, i + opIdx + 1);
+
+          tokens.push({ type: 'PRED', key, op, value });
+          i = endPos;
+        }
+      }
+      return tokens;
+    },
+
+    evalPredicate(pred, block) {
+      const predicates = {
+        lang: () => block.lang === pred.value,
+        type: () => block.type === pred.value,
+        text: () => (block.text || '') === pred.value,
+        regex: () => {
+          try {
+            return new RegExp(pred.value).test(block.content);
+          } catch (e) {
+            throw new Error(`Invalid regex: ${pred.value}`);
+          }
+        },
+        contains: () => (block.content || '').includes(pred.value)
+      };
+
+      const fn = predicates[pred.key];
+      if (!fn) throw new Error(`Unknown predicate: ${pred.key}`);
+      return fn();
+    },
+
+    evalSelection(tokens, block) {
+      if (tokens.length === 0) return true;
+
+      let result = null;
+      let expectingOperand = true;
+      let negate = false;
+
+      for (const token of tokens) {
+        if (token.type === 'OR') {
+          if (expectingOperand) throw new Error('Unexpected OR');
+          expectingOperand = true;
+        } else if (token.type === 'NOT') {
+          if (!expectingOperand) throw new Error('Unexpected NOT');
+          negate = true;
+        } else if (token.type === 'PRED') {
+          if (!expectingOperand) {
+            // Implicit AND
+            if (result !== null) {
+              let predResult = this.evalPredicate(token, block);
+              if (negate) predResult = !predResult;
+              result = result && predResult;
+              negate = false;
+            } else {
+              result = this.evalPredicate(token, block);
+              if (negate) result = !result;
+              negate = false;
+            }
+          } else {
+            // After OR or at start
+            let predResult = this.evalPredicate(token, block);
+            if (negate) predResult = !predResult;
+            if (result === null) {
+              result = predResult;
+            } else {
+              result = result || predResult;
+            }
+            negate = false;
+            expectingOperand = false;
+          }
+        }
+      }
+
+      return result !== null ? result : true;
+    },
+
+    applyChange(tokens, block) {
+      for (const token of tokens) {
+        if (token.type !== 'PRED' || token.op !== '=') {
+          throw new Error('Change command must use key=value format');
+        }
+
+        switch (token.key) {
+          case 'text':
+            block.text = token.value;
+            break;
+          case 'type':
+            block.type = token.value;
+            break;
+          case 'mark':
+            if (block.type === 'footnote') {
+              block.mark = token.value;
+            }
+            break;
+          case 'replace':
+          case 'with':
+            // These are handled separately in applyBulkCommand
+            break;
+          default:
+            throw new Error(`Unknown change key: ${token.key}`);
+        }
+      }
+    },
+
+    extractReplaceCommand(tokens) {
+      let replacePattern = null;
+      let replaceWith = null;
+      const otherTokens = [];
+
+      for (const token of tokens) {
+        if (token.type === 'PRED' && token.key === 'replace') {
+          replacePattern = token.value;
+        } else if (token.type === 'PRED' && token.key === 'with') {
+          replaceWith = token.value;
+        } else {
+          otherTokens.push(token);
+        }
+      }
+
+      return { replacePattern, replaceWith, otherTokens };
+    },
+
+    applyBulkCommand() {
+      try {
+        const selectTokens = this.selectCommand.trim() ? this.tokenizeCommand(this.selectCommand.trim()) : [];
+        const changeTokens = this.changeCommand.trim() ? this.tokenizeCommand(this.changeCommand.trim()) : [];
+
+        if (selectTokens.length === 0 && changeTokens.length === 0) {
+          this.bulkCommandStatus = 'Please enter a selection or change command';
+          return;
+        }
+
+        const { replacePattern, replaceWith, otherTokens } = this.extractReplaceCommand(changeTokens);
+
+        if (replacePattern !== null) {
+          this.previewReplaceCommand(selectTokens, replacePattern, replaceWith, otherTokens);
+          return;
+        }
+
+        let matchCount = 0;
+        let changeCount = 0;
+
+        this.pages.forEach(page => {
+          page.blocks.forEach(block => {
+            const matches = this.evalSelection(selectTokens, block);
+            if (matches) {
+              matchCount++;
+              if (changeTokens.length > 0) {
+                this.applyChange(changeTokens, block);
+                changeCount++;
+              }
+            }
+          });
+        });
+
+        if (changeTokens.length > 0) {
+          this.bulkCommandStatus = `Changed ${changeCount} blocks (matched ${matchCount})`;
+          this.updateNumbering();
+        } else {
+          this.bulkCommandStatus = `Matched ${matchCount} blocks`;
+        }
+      } catch (e) {
+        this.bulkCommandStatus = `Error: ${e.message}`;
+      }
+    },
+
+    previewReplaceCommand(selectTokens, pattern, replaceWith, otherTokens) {
+      this.replacePreview = [];
+      this.bulkCommandStatus = '';
+      this.pendingReplaceTokens = otherTokens;
+      this.pendingSelectTokens = selectTokens;
+
+      if (!pattern) {
+        this.bulkCommandStatus = 'Please specify a pattern with replace="pattern"';
+        return;
+      }
+
+      if (replaceWith === null) {
+        replaceWith = '';
+      }
+
+      try {
+        const flags = (this.replaceGlobal ? 'g' : '') + (this.replaceCaseInsensitive ? 'i' : '');
+        const regex = new RegExp(pattern, flags);
+
+        let matchCount = 0;
+
+        this.pages.forEach(page => {
+          page.blocks.forEach((block, blockIndex) => {
+            const matches = this.evalSelection(selectTokens, block);
+            if (!matches) return;
+
+            if (!block.content) return;
+
+            const newContent = block.content.replace(regex, replaceWith);
+
+            if (newContent !== block.content) {
+              this.replacePreview.push({
+                pageSlug: page.slug,
+                blockIndex: blockIndex,
+                type: block.type,
+                before: block.content,
+                after: newContent,
+                page: page,
+                block: block
+              });
+              matchCount++;
+            }
+          });
+        });
+
+        if (matchCount === 0) {
+          this.bulkCommandStatus = 'No matches found for the replace pattern';
+        } else {
+          this.bulkCommandStatus = `Found ${matchCount} block(s) with matches. Review changes below and click "Confirm & Apply" to proceed.`;
+          this.replaceMode = true;
+        }
+      } catch (e) {
+        this.bulkCommandStatus = `Invalid regex: ${e.message}`;
+      }
+    },
+
+    confirmReplace() {
+      if (this.replacePreview.length === 0) return;
+
+      this.replacePreview.forEach(item => {
+        item.block.content = item.after;
+        item.block.contentChanged = item.block.content !== item.block.originalContent;
+      });
+
+      if (this.pendingReplaceTokens && this.pendingReplaceTokens.length > 0) {
+        this.replacePreview.forEach(item => {
+          this.applyChange(this.pendingReplaceTokens, item.block);
+        });
+      }
+
+      const count = this.replacePreview.length;
+      this.bulkCommandStatus = `Applied changes to ${count} block(s)`;
+      this.replacePreview = [];
+      this.replaceMode = false;
+      this.pendingReplaceTokens = null;
+      this.pendingSelectTokens = null;
+
+      this.updateNumbering();
+
+      setTimeout(() => {
+        this.bulkCommandStatus = '';
+      }, 3000);
+    },
+
+    cancelReplace() {
+      this.replacePreview = [];
+      this.replaceMode = false;
+      this.pendingReplaceTokens = null;
+      this.pendingSelectTokens = null;
+      this.bulkCommandStatus = 'Replace cancelled';
+      setTimeout(() => {
+        this.bulkCommandStatus = '';
+      }, 2000);
+    },
+
+    clearBulkCommands() {
+      this.selectCommand = '';
+      this.changeCommand = '';
+      this.bulkCommandStatus = '';
+      this.replacePreview = [];
+      this.replaceMode = false;
+      this.pendingReplaceTokens = null;
+      this.pendingSelectTokens = null;
+    },
+
+    addBlockBelow(page, blockIndex) {
+      page.blocks.splice(blockIndex + 1, 0, this.createBlock());
+      this.updateNumbering();
+    },
+
+    removeBlock(page, blockIndex) {
+      if (page.blocks.length === 1) {
+        alert('Cannot remove the last block on a page');
+        return;
+      }
+
+      if (confirm('Are you sure you want to remove this block?')) {
+        page.blocks.splice(blockIndex, 1);
+        this.updateNumbering();
+      }
+    },
+
+    async restructureBlock(page, blockIndex) {
+      const block = page.blocks[blockIndex];
+      const content = block.content;
+
+      if (!content || content.trim() === '') {
+        alert('Block is empty, nothing to restructure');
+        return;
+      }
+
+      try {
+        const csrfToken = document.querySelector('input[name="csrf_token"]')?.value;
+        const response = await fetch('{{ url_for("proofing.project.parse_content", slug=project.slug) }}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+          body: JSON.stringify({ content: content })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to parse content');
+        }
+
+        const data = await response.json();
+
+        if (!data.blocks || data.blocks.length === 0) {
+          alert('No blocks found after parsing');
+          return;
+        }
+
+        const newBlocks = data.blocks.map(blockData => this.createBlock({
+          type: blockData.type,
+          content: blockData.content,
+          text: block.text || '',
+          mark: blockData.mark || '',
+          lang: blockData.lang || null,
+          originalContent: blockData.content,
+          originalType: blockData.type,
+          originalText: block.text || '',
+          originalMark: blockData.mark || ''
+        }));
+        page.blocks.splice(blockIndex, 1, ...newBlocks);
+
+        this.updateNumbering();
+        alert(`Restructured into ${newBlocks.length} block(s)`);
+      } catch (e) {
+        alert(`Failed to restructure: ${e.message}`);
+        console.error('Restructure error:', e);
+      }
+    },
+
+    getUniqueTexts(page) {
+      const texts = new Set();
+      page.blocks.forEach(block => {
+        if (block.text && block.text.trim() !== '') {
+          texts.add(block.text.trim());
+        }
+      });
+      return Array.from(texts).sort();
+    },
+
+    propagateNumbering(page, blockIndex) {
+      const firstBlock = page.blocks[blockIndex];
+      const pageIndex = this.pages.findIndex(p => p.slug === page.slug);
+      if (pageIndex === -1) return;
+
+      const match = firstBlock.n?.match(/^(.*?)(\d+)$/);
+      if (!match) return;
+
+      const [, prefix, startNum] = match;
+      let next = parseInt(startNum);
+      if (!firstBlock.merge_next) next += 1;
+
+      const targetText = firstBlock.text;
+
+      for (let i = pageIndex; i < this.pages.length; i++) {
+        const currentPage = this.pages[i];
+        const startIdx = i === pageIndex ? blockIndex + 1 : 0;
+
+        for (let j = startIdx; j < currentPage.blocks.length; j++) {
+          const block = currentPage.blocks[j];
+
+          if (block.text !== targetText || !['verse', 'p'].includes(block.type)) continue;
+          if (block.manualNumber) return;
+
+          block.n = `${prefix}${next}`;
+          if (!block.merge_next) next += 1;
+        }
+      }
+    },
+
+    updateNumbering() {
+      clearTimeout(this.numberingTimeout);
+      this.numberingTimeout = setTimeout(() => {
+        // Clear automatic numbers
+        this.pages.forEach(page => {
+          page.blocks.forEach(block => {
+            if (!block.manualNumber) block.n = null;
+          });
+        });
+
+        // Propagate from manual numbers
+        this.pages.forEach((page, i) => {
+          page.blocks.forEach((block, j) => {
+            if (block.manualNumber) {
+              this.propagateNumbering(page, j);
+            }
+          });
+        });
+      }, 100);
+    },
+
+    generateStructure() {
+      return {
+        project: '{{ project.slug }}',
+        pages: this.pages
+          .filter(page => !page.ignorePage)
+          .map(page => ({
+            slug: page.slug,
+            version: page.version,
+            blocks: page.blocks.map(block => this.blockToData(block, true))
+          }))
+      };
+    },
+
+    previewStructure() {
+      const structure = this.generateStructure();
+      const includedPages = this.pages.filter(page => !page.ignorePage);
+      const ignoredCount = this.pages.length - includedPages.length;
+
+      this.structureJson = JSON.stringify(structure, null, 2);
+      this.structureStatus = `Generated structure for ${includedPages.length} pages` +
+        (ignoredCount > 0 ? ` (${ignoredCount} page${ignoredCount > 1 ? 's' : ''} ignored)` : '');
+      this.statusSuccess = false;
+    },
+
+    copyToClipboard() {
+      navigator.clipboard.writeText(this.structureJson).then(() => {
+        this.structureStatus = 'Copied to clipboard!';
+        setTimeout(() => {
+          this.structureStatus = '';
+        }, 2000);
+      }).catch(err => {
+        this.structureStatus = 'Failed to copy';
+        console.error('Copy failed:', err);
+      });
+    },
+
+    hasBlockChanged(block) {
+      if (block.originalIndex === null) return true;
+
+      const fields = [
+        ['content', 'originalContent'],
+        ['type', 'originalType'],
+        ['text', 'originalText', ''],
+        ['mark', 'originalMark', ''],
+        ['merge_next', 'originalMergeNext', false]
+      ];
+
+      for (const [field, original, defaultVal = null] of fields) {
+        if ((block[field] ?? defaultVal) !== block[original]) return true;
+      }
+
+      return block.manualNumber && (block.n || '') !== block.originalN;
+    },
+
+    pageHasChanges(page) {
+      return page.blocks.some(block => this.hasBlockChanged(block));
+    },
+
+    submitChangedOnly() {
+      if (this.isSubmitting) return;
+
+      const pagesWithChanges = this.pages.filter(page =>
+        !page.ignorePage && this.pageHasChanges(page)
+      );
+
+      if (pagesWithChanges.length === 0) {
+        alert('No changes detected');
+        return;
+      }
+
+      if (!confirm(`Save changes to ${pagesWithChanges.length} page(s)?`)) return;
+
+      this.submitPages(pagesWithChanges, false);
+    },
+
+    submitPages(pages, includeAllNumbers) {
+      this.isSubmitting = true;
+      this.structureStatus = 'Preparing submission...';
+
+      const structure = {
+        project: '{{ project.slug }}',
+        pages: pages.map(page => ({
+          slug: page.slug,
+          version: page.version,
+          blocks: page.blocks.map(block => this.blockToData(block, includeAllNumbers))
+        }))
+      };
+
+      this.$refs.structureData.value = JSON.stringify(structure);
+      this.$el.closest('form').submit();
+    },
+
+    submitStructure() {
+      if (this.isSubmitting) return;
+      this.submitPages(this.pages.filter(page => !page.ignorePage), true);
+    }
+  };
+}
+</script>
+{% endblock %}
