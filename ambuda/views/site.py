@@ -4,6 +4,7 @@ from flask import Blueprint, redirect, render_template, session, url_for
 
 from ambuda import queries as q
 from ambuda.consts import LOCALES
+from ambuda.utils import text_utils
 from vidyut.lipi import transliterate, Scheme
 
 bp = Blueprint("site", __name__)
@@ -11,16 +12,8 @@ bp = Blueprint("site", __name__)
 
 @bp.route("/")
 def index():
-    texts = q.texts()
-    sorted_texts = sorted(
-        texts,
-        key=lambda x: transliterate(x.title, Scheme.HarvardKyoto, Scheme.Devanagari),
-    )
-    genre_map = {x.id: x for x in q.genres()}
-    author_map = {x.id: x for x in q.authors()}
-    return render_template(
-        "index.html", texts=sorted_texts, genre_map=genre_map, author_map=author_map
-    )
+    text_entries = text_utils.create_text_entries()
+    return render_template("index.html", text_entries=text_entries)
 
 
 @bp.route("/contact")

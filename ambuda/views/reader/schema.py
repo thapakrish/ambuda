@@ -11,6 +11,8 @@ class Block:
     mula: str
     #: URL to edit this block in the proofing interface (if available)
     page_url: str | None = None
+    #: Parent blocks (for translations/commentaries)
+    parent_blocks: list["Block"] | None = None
 
 
 @dataclass

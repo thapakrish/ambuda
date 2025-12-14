@@ -9,6 +9,7 @@ import ambuda.database as db
 import ambuda.queries as q
 from ambuda.consts import TEXT_CATEGORIES
 from ambuda.models.texts import TextConfig
+from ambuda.utils import text_utils
 from ambuda.utils import xml
 from ambuda.utils.json_serde import AmbudaJSONEncoder
 from ambuda.views.api import bp as api
@@ -70,19 +71,9 @@ def _hk_to_dev(s: str) -> str:
 @bp.route("/")
 def index():
     """Show all texts."""
-    texts = q.texts()
-    sorted_texts = sorted(
-        texts,
-        key=lambda x: transliterate(x.title, Scheme.HarvardKyoto, Scheme.Devanagari),
-    )
-    genre_map = {x.id: x for x in q.genres()}
-    author_map = {x.id: x for x in q.authors()}
-    return render_template(
-        "texts/index.html",
-        texts=sorted_texts,
-        genre_map=genre_map,
-        author_map=author_map,
-    )
+
+    text_entries = text_utils.create_text_entries()
+    return render_template("texts/index.html", text_entries=text_entries)
 
 
 @bp.route("/<slug>/")
@@ -181,6 +172,13 @@ def section(text_slug, section_slug):
             _ = block.page
             if block.page:
                 _ = block.page.project
+            # Eagerly load parent relationships if this is a child text
+            if text_.parent_id:
+                _ = block.parents
+                for parent_block in block.parents:
+                    _ = parent_block.page
+                    if parent_block.page:
+                        _ = parent_block.page.project
 
     blocks = []
     for block in cur.blocks:
@@ -192,11 +190,34 @@ def section(text_slug, section_slug):
                 project_slug=page.project.slug,
                 page_slug=page.slug,
             )
+
+        # Fetch parent blocks if this text has a parent
+        parent_blocks = None
+        if text_.parent_id and block.parents:
+            parent_blocks = []
+            for parent_block in block.parents:
+                parent_page = parent_block.page
+                parent_page_url = None
+                if parent_page:
+                    parent_page_url = url_for(
+                        "proofing.page.edit",
+                        project_slug=parent_page.project.slug,
+                        page_slug=parent_page.slug,
+                    )
+                parent_blocks.append(
+                    Block(
+                        slug=parent_block.slug,
+                        mula=xml.transform_text_block(parent_block.xml),
+                        page_url=parent_page_url,
+                    )
+                )
+
         blocks.append(
             Block(
                 slug=block.slug,
                 mula=xml.transform_text_block(block.xml),
                 page_url=page_url,
+                parent_blocks=parent_blocks,
             )
         )
 

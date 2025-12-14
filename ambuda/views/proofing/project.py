@@ -1050,11 +1050,20 @@ def publish_preview(slug):
                     }
                 )
 
+        parent_info = None
+        if config.parent_slug:
+            parent_text = session.execute(
+                sqla.select(db.Text).where(db.Text.slug == config.parent_slug)
+            ).scalar_one_or_none()
+            if parent_text:
+                parent_info = {"slug": parent_text.slug, "title": parent_text.title}
+
         preview = {
             "slug": config.slug,
             "title": config.title,
             "target": config.target,
             "is_new": existing_text is None,
+            "parent": parent_info,
             "diffs": diffs,
         }
 
@@ -1105,6 +1114,7 @@ def publish_create(slug):
     session = q.get_session()
     created_count = 0
     updated_count = 0
+    texts_map = {}
 
     for config in project_config.publish:
         document = _create_tei_document(project_, config.target)
@@ -1124,6 +1134,7 @@ def publish_create(slug):
         else:
             if text.project_id != project_.id:
                 text.project_id = project_.id
+            text.language = config.language
             text.title = config.title
 
         existing_sections = {s.slug for s in text.sections}
@@ -1221,10 +1232,72 @@ def publish_create(slug):
                     )
                     session.add(new_block)
 
+        texts_map[config.slug] = text
         if is_new_text:
             created_count += 1
         else:
             updated_count += 1
+
+    session.flush()
+
+    for config in project_config.publish:
+        if config.parent_slug:
+            text = texts_map[config.slug]
+            parent_text = texts_map.get(config.parent_slug) or q.text(
+                config.parent_slug
+            )
+            if parent_text:
+                text.parent_id = parent_text.id
+
+    session.flush()
+
+    for config in project_config.publish:
+        if config.parent_slug:
+            text = texts_map[config.slug]
+            parent_text = texts_map.get(config.parent_slug) or q.text(
+                config.parent_slug
+            )
+            if not parent_text:
+                continue
+
+            parent_blocks = (
+                session.execute(
+                    sqla.select(db.TextBlock)
+                    .where(db.TextBlock.text_id == parent_text.id)
+                    .order_by(db.TextBlock.n)
+                )
+                .scalars()
+                .all()
+            )
+
+            child_blocks = (
+                session.execute(
+                    sqla.select(db.TextBlock)
+                    .where(db.TextBlock.text_id == text.id)
+                    .order_by(db.TextBlock.n)
+                )
+                .scalars()
+                .all()
+            )
+
+            child_block_ids = [b.id for b in child_blocks]
+            if child_block_ids:
+                session.execute(
+                    sqla.delete(db.text_block_associations).where(
+                        db.text_block_associations.c.child_id.in_(child_block_ids)
+                    )
+                )
+
+            parent_blocks_by_slug = {b.slug: b for b in parent_blocks}
+            for child_block in child_blocks:
+                parent_block = parent_blocks_by_slug.get(child_block.slug)
+                if parent_block:
+                    session.execute(
+                        sqla.insert(db.text_block_associations).values(
+                            parent_id=parent_block.id,
+                            child_id=child_block.id,
+                        )
+                    )
 
     session.commit()
 

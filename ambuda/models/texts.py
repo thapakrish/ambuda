@@ -11,7 +11,7 @@ import json
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, Integer, String, JSON, event
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, JSON, Table, event
 from sqlalchemy import Text as _Text
 from sqlalchemy.orm import relationship
 
@@ -47,16 +47,22 @@ class Text(Base):
     # NOTE: so just call this `config`.
     #: The schema is defined in `TextConfig`.
     config = Column(JSON, nullable=True)
-    genre_id = foreign_key("genres.id", nullable=True)
-    #: The project that created this text.
-    project_id = foreign_key("proof_projects.id", nullable=True)
+    language = Column(String, nullable=False, default="sa")
+
     #: Timestamp at which this text was created.
     #: Nullable for legacy reasons.
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=True)
     #: Timestamp at which this text was published.
     published_at = Column(DateTime, nullable=True)
+
+    genre_id = foreign_key("genres.id", nullable=True)
+    #: The project that created this text.
+    project_id = foreign_key("proof_projects.id", nullable=True)
     # The text's author.
     author_id = foreign_key("authors.id", nullable=True)
+    # The parent text that this text corresponds to.
+    # (Non-null for translations, commentaries, etc.)
+    parent_id = foreign_key("texts.id", nullable=True)
 
     #: An ordered list of the sections contained within this text.
     sections = relationship("TextSection", backref="text", cascade="delete")
@@ -66,6 +72,8 @@ class Text(Base):
     project = relationship("Project", backref="texts")
     #: The author that created this text.
     author = relationship("Author", backref="texts")
+    # The parent text that this text corresponds to.
+    parent = relationship("Text", remote_side=[id], backref="children")
 
     def __str__(self):
         return self.slug
@@ -111,6 +119,14 @@ class TextSection(Base):
     )
 
 
+text_block_associations = Table(
+    "text_block_associations",
+    Base.metadata,
+    Column("parent_id", Integer, ForeignKey("text_blocks.id"), primary_key=True),
+    Column("child_id", Integer, ForeignKey("text_blocks.id"), primary_key=True),
+)
+
+
 class TextBlock(Base):
     """A verse or paragraph.
 
@@ -137,6 +153,25 @@ class TextBlock(Base):
 
     text = relationship("Text")
     page = relationship("Page", backref="text_blocks")
+
+    children = relationship(
+        "TextBlock",
+        secondary=text_block_associations,
+        primaryjoin="TextBlock.id==text_block_associations.c.parent_id",
+        secondaryjoin="TextBlock.id==text_block_associations.c.child_id",
+        order_by="TextBlock.n",
+        backref="parents_backref",
+    )
+
+    # Parents: blocks that are parents of this block (e.g., verses that this commentary references)
+    parents = relationship(
+        "TextBlock",
+        secondary=text_block_associations,
+        primaryjoin="TextBlock.id==text_block_associations.c.child_id",
+        secondaryjoin="TextBlock.id==text_block_associations.c.parent_id",
+        order_by="TextBlock.n",
+        viewonly=True,
+    )
 
     def __str__(self) -> str:
         return self.slug

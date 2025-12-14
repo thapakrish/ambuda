@@ -48,7 +48,8 @@ class PublishConfig(BaseModel):
     title: str
     target: str | None = None
     author: str | None = None
-    language: str | None = None
+    language: str = "sa"
+    parent_slug: str | None = None
 
 
 class ProjectConfig(BaseModel):

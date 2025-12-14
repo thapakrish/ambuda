@@ -212,7 +212,26 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
 
   {# Server-side logic. This will be hidden once the application loads. #}
   <div x-show="!data.blocks.length">
-    {% for block_ in html_blocks %}
+  {% for block_ in html_blocks %}
+    {% set is_child_block = block_.parent_blocks %}
+
+    {% if is_child_block %}
+      {% for parent_block in block_.parent_blocks %}
+      <s-block data-slug="{{ parent_block.slug }}" class="parent-block">
+        <div class="flex items-start gap-2 mb-4 pb-4">
+          <div class="mula flex-1">{{ parent_block.mula|safe }}</div>
+          {% if parent_block.page_url %}
+          <a href="{{ parent_block.page_url }}"
+             class="text-slate-400 hover:text-slate-600 flex-shrink-0 mt-1"
+             title="Edit in proofing interface">
+            <svg width="16" height="16"><use href="#edit"></use></svg>
+          </a>
+          {% endif %}
+        </div>
+      </s-block>
+      {% endfor %}
+    {% endif %}   
+
     <s-block data-slug="{{ block_.slug }}">
       <div class="flex items-start gap-2">
         <div class="mula flex-1">{{ block_.mula|safe }}</div>
@@ -225,30 +244,54 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
         {% endif %}
       </div>
     </s-block>
-    {% endfor %}
+
+  {% endfor %}
   </div>
 
   {# Client-side logic. This is what most readers will see and use. #}
   <template x-for="b in data.blocks">
-    <s-block :data-slug="b.slug">
-      <div class="flex items-start gap-2">
-        <div class="flex-1">
-          <div :class="getBlockClasses(b)">
-            <div x-show="showBlockMula(b)" :class="getMulaClasses" x-html="transliterateHTML(b.mula)"></div>
-            <div x-show="b.showParse" x-html="transliterateHTML(b.parse)"></div>
+    <div>
+
+      {# Parent blocks #}
+      <template x-if="b.parent_blocks && b.parent_blocks.length > 0">
+        <template x-for="parent_block in b.parent_blocks">
+          <s-block :data-slug="parent_block.slug" class="parent-block">
+            <div class="flex items-start gap-2 mb-4 pb-4">
+              <div class="flex-1">
+                <div class="mula" x-html="transliterateHTML(parent_block.mula)"></div>
+              </div>
+              <a x-show="parent_block.page_url"
+                 :href="parent_block.page_url"
+                 class="text-slate-400 hover:text-slate-600 flex-shrink-0 mt-1"
+                 title="Edit in proofing interface">
+                <svg width="16" height="16"><use href="#edit"></use></svg>
+              </a>
+            </div>
+          </s-block>
+        </template>
+      </template>
+
+      {# Child blocks #}
+      <s-block :data-slug="b.slug">
+        <div class="flex items-start gap-2">
+          <div class="flex-1">
+            <div :class="getBlockClasses(b)">
+              <div x-show="showBlockMula(b)" :class="getMulaClasses" x-html="transliterateHTML(b.mula)"></div>
+              <div x-show="b.showParse" x-html="transliterateHTML(b.parse)"></div>
+            </div>
+            <span class="text-sm text-zinc-400 hover:underline" x-show="b.showParse">
+              <a @click.prevent="hideParse(b)" href="#" x-text="getParseLayoutTogglerText"></a>
+            </span>
           </div>
-          <span class="text-sm text-zinc-400 hover:underline" x-show="b.showParse">
-            <a @click.prevent="hideParse(b)" href="#" x-text="getParseLayoutTogglerText"></a>
-          </span>
+          <a x-show="b.page_url"
+             :href="b.page_url"
+             class="text-slate-400 hover:text-slate-600 flex-shrink-0 mt-1"
+             title="Edit in proofing interface">
+            <svg width="16" height="16"><use href="#edit"></use></svg>
+          </a>
         </div>
-        <a x-show="b.page_url"
-           :href="b.page_url"
-           class="text-slate-400 hover:text-slate-600 flex-shrink-0 mt-1"
-           title="Edit in proofing interface">
-          <svg width="16" height="16"><use href="#edit"></use></svg>
-        </a>
-      </div>
-    </s-block>
+      </s-block>
+    </div>
   </template>
 
   </div></div>

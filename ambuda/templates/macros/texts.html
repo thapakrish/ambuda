@@ -1,31 +1,38 @@
-{% macro all_texts(texts, genre_map, author_map) %}
-<table class="my-24 w-full">
-  <thead class="border-b">
-    <tr class="text-slate-500">
-      <th class="text-left p-2">Title</th>
-      <th class="text-right p-2">Author</th>
-      <th class="text-right p-2">Genre</th>
-    </tr>
-  </thead>
-  {% for text in texts %}
-  <tr class="even:bg-slate-50">
-    {% set url = url_for('texts.text', slug=text.slug) %}
-    <td>
-      <a class="p-2 block text-xl hover:underline" href="{{ url }}">
-      {{ text.title | devanagari }}
-      </a>
-    </td>
-    <td class="p-2 text-right">
-      {% if text.author_id %}
-        {{ author_map[text.author_id].name }}
+{% macro all_texts(text_entries) %}
+
+<ul>
+{% for entry in text_entries %}
+<li class="even:bg-slate-50 p-2">
+  <h2>
+    {% set url = url_for('texts.text', slug=entry.text.slug) %}
+    <a href="{{ url }}" class="hover:underline">
+      <span class="text-xl">{{ entry.text.title | devanagari }}</span>
+
+      {% if entry.author or entry.genre %}
+      <span class="text-slate-500">
+        &mdash;
+        {% if entry.author %} {{ entry.author.name }} {% endif %}
+        {% if entry.genre %} ({{ entry.genre.name }}) {% endif %}
+      </span>
       {% endif %}
-    </td>
-    <td class="p-2 text-right">
-      {% if text.genre_id %}
-        {{ genre_map[text.genre_id].name }}
-      {% endif %}
-    </td>
-  </tr>
-  {% endfor %}
-</table>
+     </a>
+  </h2>
+
+  {% if entry.children %}
+  <ul class="list-disc my-4 pl-4">
+    {% for child in entry.children %}
+      {% set url = url_for('texts.text', slug=child.text.slug) %}
+      <li>
+        <a class="hover:underline"
+          href="{{ url }}">{{ child.text.title | devanagari }}</a>
+        {% if child.text.language == "hi" %}
+        (Hindi)
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</li>
+{% endfor %}
+</ul>
 {% endmacro %}
