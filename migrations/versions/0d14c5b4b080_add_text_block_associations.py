@@ -33,6 +33,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("parent_id", "child_id"),
     )
     with op.batch_alter_table("texts", schema=None) as batch_op:
+        batch_op.add_column(sa.Column("parent_id", sa.Integer(), nullable=True))
         batch_op.create_index(
             batch_op.f("ix_texts_parent_id"), ["parent_id"], unique=False
         )

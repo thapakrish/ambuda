@@ -2,9 +2,21 @@
 
 
 {% macro text_header(text) %}
-<h1 class="text-center font-bold text-5xl x-deva my-16">
-  {{ text.title | devanagari }}
-</h1>
+<header class="text-center my-16">
+  <h1 class="font-bold text-5xl x-deva">
+    {{ text.title | devanagari }}
+  </h1>
+  {% if text.parent %}
+  <p class="text-xl my-8 text-slate-500">(
+    <a class="hover:underline" href="{{ url_for('texts.text', slug=text.parent.slug) }}">
+      {{- text.parent.title -}}
+    </a>
+    &mdash;
+    {% if text.language == "hi" %}Hindi{% endif %}
+    {% if text.language == "en" %}English{% endif %}
+  )</p>
+  {% endif %}
+</header>
 {% endmacro %}
 
 

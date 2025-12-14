@@ -1131,11 +1131,10 @@ def publish_create(slug):
             session.add(text)
             session.flush()
             is_new_text = True
-        else:
-            if text.project_id != project_.id:
-                text.project_id = project_.id
-            text.language = config.language
-            text.title = config.title
+
+        text.project_id = project_.id
+        text.language = config.language
+        text.title = config.title
 
         existing_sections = {s.slug for s in text.sections}
         doc_sections = {s.slug for s in document.sections}

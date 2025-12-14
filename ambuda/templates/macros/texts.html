@@ -23,11 +23,11 @@
     {% for child in entry.children %}
       {% set url = url_for('texts.text', slug=child.text.slug) %}
       <li>
-        <a class="hover:underline"
-          href="{{ url }}">{{ child.text.title | devanagari }}</a>
-        {% if child.text.language == "hi" %}
-        (Hindi)
-        {% endif %}
+        <a class="hover:underline" href="{{ url }}">
+          {{ child.text.title }}
+          {% if child.text.language == "hi" %}(Hindi){% endif %}
+          {% if child.text.language == "en" %}(English){% endif %}
+        </a>
       </li>
     {% endfor %}
   </ul>
