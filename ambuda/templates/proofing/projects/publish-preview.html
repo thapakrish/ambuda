@@ -87,7 +87,7 @@
             </span>
           </div>
           <pre class="diff-content text-sm font-mono whitespace-pre-wrap {% if diff.type == 'added' %}text-green-900{% elif diff.type == 'removed' %}text-red-900{% else %}text-slate-900{% endif %}">
-            {{- diff.diff -}}
+            {{- diff.diff|safe -}}
           </pre >
         </div>
         {% endfor %}

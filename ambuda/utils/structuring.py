@@ -347,6 +347,10 @@ class ProofProject:
                 page_id=page_id,
             )
 
+            # HACK: for now, strip out footnote markup -- it's not supported
+            # and it looks ugly.
+            block.xml = re.sub(r"\[\^.*?\]", "", block.xml)
+
             section_n, _, block_n = block_slug.rpartition(".")
             if not section_n:
                 section_n = "all"
