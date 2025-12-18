@@ -1,15 +1,619 @@
 {% extends 'proofing/base.html' %}
+{% import "macros/components.html" as components %}
 
-{% block content %}
-<div class="prose">
-  <h1>{{ text.title|devanagari }} / {{ section.title }}</h1>
+{% macro help_item(code, desc) -%}
+<div><code class="bg-slate-200 px-1 rounded">{{ code }}</code> - {{ desc }}</div>
+{%- endmacro %}
+
+{% block title %}Batch Edit Parse Data: {{ text.title }} | Ambuda{% endblock %}
+
+{% block main %}
+<div class="mt-8 px-4">
+{{ components.flash_messages() }}
+
+<div class="mb-4">
+  <h1 class="text-3xl font-bold">
+    <a class="text-slate-400 hover:text-blue-600"
+        href="{{ url_for('proofing.tagging.text', slug=text.slug) }}">
+       {{ text.title|devanagari }}
+    </a>
+    <span class="text-slate-600">/ Batch Edit Parse Data</span>
+  </h1>
 </div>
 
-<ul class="grid grid-cols-10 gap-4 text-center a-hover-underline">
-  {% for block in section.blocks %}
-  {% set url = url_for('proofing.tagging.edit_block', text_slug=text.slug, block_slug=block.slug) %}
-  <li><a class="block" href="{{ url }}">{{ block.slug }}</a></li>
-  {% endfor %}
-</ul>
+{% if blocks|length == 0 %}
+<div class="bg-yellow-50 border border-yellow-300 text-yellow-800 px-4 py-3 rounded mb-4">
+  <strong>No parse data found in this section.</strong> Please add parse data to blocks before using the batch editing interface.
+</div>
+{% else %}
 
+<div x-data="batchEditParse()" class="max-w-none">
+  <div class="sticky top-0 z-10 bg-white border-b-2 border-slate-300 shadow-md mb-4">
+    <div class="bg-slate-100 p-3">
+      <div class="flex justify-between items-start mb-3">
+        <div class="flex items-center gap-3">
+          <h3 class="font-bold text-sm">Batch Parse Editor</h3>
+          <div class="relative" @click.away="helpOpen = false">
+            <button @click="helpOpen = !helpOpen"
+                    class="text-xs px-2 py-1 border border-slate-400 rounded hover:bg-slate-200 text-slate-600">
+              ? Help
+            </button>
+            <div x-show="helpOpen" x-transition
+                 class="absolute left-0 mt-1 bg-white border border-slate-300 rounded shadow-lg z-20 w-96 p-3 text-xs">
+              <h4 class="font-semibold mb-2">Parse Data Format:</h4>
+              <div class="space-y-1 mb-3 text-slate-700">
+                {{ help_item('Form', 'Surface form (e.g., rAmaH)') }}
+                {{ help_item('Lemma', 'Base form (e.g., rAma)') }}
+                {{ help_item('Parse', 'Parse tags (e.g., pos=n,g=m,c=1,n=s)') }}
+              </div>
+              <h4 class="font-semibold mb-2">Color Coding:</h4>
+              <div class="space-y-1 mb-3 text-slate-700">
+                {{ help_item('Orange', 'Nouns (pos=n)') }}
+                {{ help_item('Blue', 'Verbs (pos=v)') }}
+                {{ help_item('Green', 'Other parts of speech') }}
+              </div>
+              <h4 class="font-semibold mb-2">Keyboard Shortcuts:</h4>
+              <div class="space-y-1 mb-3 text-slate-700">
+                {{ help_item('↓ Down', 'Move to next row (same column)') }}
+                {{ help_item('↑ Up', 'Move to previous row (same column)') }}
+                {{ help_item('Enter', 'Create empty row below and focus it') }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex gap-3 items-center">
+          <div class="text-xs text-slate-600">
+            Section {{ current_section_num }} of {{ total_sections }}: {{ section.title }}
+          </div>
+          <div class="flex gap-1">
+            {% if prev_section_url %}
+            <a href="{{ prev_section_url }}"
+               class="px-2 py-1 border rounded text-xs hover:bg-slate-200 inline-block">
+              ← Prev
+            </a>
+            {% else %}
+            <span class="px-2 py-1 border rounded text-xs opacity-50 cursor-not-allowed inline-block">
+              ← Prev
+            </span>
+            {% endif %}
+            {% if next_section_url %}
+            <a href="{{ next_section_url }}"
+               class="px-2 py-1 border rounded text-xs hover:bg-slate-200 inline-block">
+              Next →
+            </a>
+            {% else %}
+            <span class="px-2 py-1 border rounded text-xs opacity-50 cursor-not-allowed inline-block">
+              Next →
+            </span>
+            {% endif %}
+          </div>
+          <div class="border-l border-slate-400 h-6"></div>
+          <button @click.prevent="previewChanges()" type="button" class="btn btn-basic text-xs px-3 py-1">
+            Preview JSON
+          </button>
+          <button @click.prevent="submitChanges()"
+                  :disabled="isSubmitting"
+                  class="btn btn-submit text-xs px-3 py-1"
+                  :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }">
+            Save Changes
+          </button>
+        </div>
+      </div>
+
+      <p x-show="statusMessage" x-text="statusMessage"
+         class="text-xs"
+         :class="statusSuccess ? 'text-green-600' : 'text-slate-600'"></p>
+    </div>
+
+    <div class="bg-amber-50 border-t border-amber-300 p-3">
+      <h4 class="font-semibold text-sm mb-2">Search & Replace Parse Values</h4>
+      <div class="grid grid-cols-2 gap-3 mb-2">
+        <div>
+          <label class="block text-xs font-medium mb-1">Search (regex):</label>
+          <input type="text"
+                 x-model="searchPattern"
+                 placeholder='e.g., pos=n'
+                 class="w-full border rounded px-2 py-1 text-xs font-mono">
+        </div>
+        <div>
+          <label class="block text-xs font-medium mb-1">Replace with:</label>
+          <input type="text"
+                 x-model="replacePattern"
+                 placeholder='e.g., pos=noun'
+                 class="w-full border rounded px-2 py-1 text-xs font-mono">
+        </div>
+      </div>
+      <div class="flex gap-2 items-center">
+        <button @click="previewParseReplace()"
+                class="btn btn-submit text-xs px-3 py-1 bg-amber-600 hover:bg-amber-700">
+          Preview Changes
+        </button>
+        <button @click="clearSearchReplace()"
+                class="btn btn-basic text-xs px-3 py-1">
+          Clear
+        </button>
+        <label class="flex items-center gap-1">
+          <input type="checkbox" x-model="replaceGlobal" class="w-3 h-3">
+          <span class="text-xs">Global (replace all occurrences)</span>
+        </label>
+        <label class="flex items-center gap-1">
+          <input type="checkbox" x-model="replaceCaseInsensitive" class="w-3 h-3">
+          <span class="text-xs">Case-insensitive</span>
+        </label>
+      </div>
+      <p x-show="searchReplaceStatus" x-text="searchReplaceStatus"
+         class="text-xs mt-2"
+         :class="searchReplaceSuccess ? 'text-green-600' : 'text-slate-600'"></p>
+    </div>
+
+    <div x-show="replacePreview.length > 0"
+         class="bg-white border-t border-amber-400 p-3 max-h-96 overflow-y-auto">
+      <div class="flex justify-between items-center mb-2 sticky top-0 bg-white pb-2 border-b border-amber-200">
+        <h5 class="font-semibold text-sm text-amber-900">
+          Preview: <span x-text="replacePreview.length"></span> token(s) will be changed
+        </h5>
+        <div class="flex gap-2">
+          <button @click="applyParseReplace()"
+                  class="btn btn-submit text-xs bg-amber-600 hover:bg-amber-700">
+            Apply Changes
+          </button>
+          <button @click="cancelParseReplace()"
+                  class="btn btn-basic text-xs">
+            Cancel
+          </button>
+        </div>
+      </div>
+      <div class="space-y-2">
+        <template x-for="(item, idx) in replacePreview" :key="idx">
+          <div class="border-b border-slate-200 pb-2">
+            <div class="text-xs text-slate-500 mb-1">
+              Block <span x-text="item.blockSlug"></span>, Token <span x-text="item.tokenIdx + 1"></span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <div class="font-medium text-red-700 mb-1">Before:</div>
+                <div class="bg-red-50 border border-red-200 rounded p-2 font-mono" x-text="item.before"></div>
+              </div>
+              <div>
+                <div class="font-medium text-green-700 mb-1">After:</div>
+                <div class="bg-green-50 border border-green-200 rounded p-2 font-mono" x-text="item.after"></div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-6">
+    <div class="bg-slate-200 px-4 py-2 border-b border-slate-300 sticky top-[120px] z-5">
+      <div class="flex justify-between items-center">
+        <div>
+          <h2 class="text-lg font-bold">Section: {{ section.title }}</h2>
+          <p class="text-xs text-slate-600" x-text="blocks.length + ' block(s)'"></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-xs font-medium text-slate-600">Script:</label>
+          <select x-model="displayScript"
+                  class="border border-slate-400 bg-white text-xs px-2 py-1 rounded">
+            <option value="devanagari">Devanagari</option>
+            <option value="slp1">SLP1</option>
+            <option value="iast">IAST</option>
+            <option value="itrans">ITRANS</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <template x-for="(block, blockIdx) in blocks" :key="block.block_data.block_id">
+        <div class="border-t border-slate-200 pt-4 pb-6 px-4">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-sm font-medium text-slate-400"
+                  x-text="'Block ' + block.block_data.block_slug"></span>
+            <button @click="addToken(block.block_data.block_id)"
+                    class="text-xs px-2 py-1 bg-green-100 hover:bg-green-200 border border-green-400 rounded">
+              + Add Token
+            </button>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4 mb-3">
+            <div>
+              <div class="text-xs font-medium mb-1 text-slate-600">Original Text:</div>
+              <div class="bg-slate-50 border border-slate-200 rounded p-3 text-base font-sans"
+                   x-html="block.xml_content"></div>
+            </div>
+          </div>
+
+          <div class="text-xs font-medium mb-2 text-slate-600">Parse Data:</div>
+          <table class="w-full border-collapse">
+            <thead>
+              <tr class="bg-slate-100 border-b-2 border-slate-300">
+                <th class="text-left px-2 py-2 text-xs font-semibold w-8">#</th>
+                <th class="text-left px-2 py-2 text-xs font-semibold w-1/3">Form</th>
+                <th class="text-left px-2 py-2 text-xs font-semibold w-1/3">Base</th>
+                <th class="text-left px-2 py-2 text-xs font-semibold w-1/3">Parse</th>
+                <th class="w-16"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="(token, tokenIdx) in block.block_data.tokens" :key="tokenIdx">
+                <tr :class="getRowColor(token.parse)"
+                    class="border-b border-slate-200 hover:bg-opacity-50"
+                    :data-row-id="`${block.block_data.block_id}-${tokenIdx}`">
+                  <td class="px-2 py-1 text-xs text-slate-500" x-text="tokenIdx + 1"></td>
+                  <td class="px-2 py-1">
+                    <input type="text"
+                           :value="transliterate(token.form)"
+                           @input="token.form = transliterateBack($event.target.value); markBlockChanged(block.block_data.block_id)"
+                           @keydown="handleKeyNav($event, block.block_data.block_id, tokenIdx, 'form')"
+                           :data-field="'form'"
+                           :data-row-idx="tokenIdx"
+                           :data-block-id="block.block_data.block_id"
+                           class="w-full px-2 py-1 text-sm font-mono border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                           placeholder="Form">
+                  </td>
+                  <td class="px-2 py-1">
+                    <input type="text"
+                           :value="transliterate(token.base)"
+                           @input="token.base = transliterateBack($event.target.value); markBlockChanged(block.block_data.block_id)"
+                           @keydown="handleKeyNav($event, block.block_data.block_id, tokenIdx, 'base')"
+                           :data-field="'base'"
+                           :data-row-idx="tokenIdx"
+                           :data-block-id="block.block_data.block_id"
+                           class="w-full px-2 py-1 text-sm font-mono border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                           placeholder="Base">
+                  </td>
+                  <td class="px-2 py-1">
+                    <input type="text"
+                           x-model="token.parse"
+                           @input="markBlockChanged(block.block_data.block_id)"
+                           @keydown="handleKeyNav($event, block.block_data.block_id, tokenIdx, 'parse')"
+                           :data-field="'parse'"
+                           :data-row-idx="tokenIdx"
+                           :data-block-id="block.block_data.block_id"
+                           class="w-full px-2 py-1 text-sm font-mono border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                           placeholder="pos=n,g=m,c=1,n=s">
+                  </td>
+                  <td class="px-2 py-1 text-center">
+                    <button @click="removeToken(block.block_data.block_id, tokenIdx)"
+                            class="text-xs px-2 py-1 bg-red-100 hover:bg-red-200 border border-red-400 rounded text-red-700 font-bold">
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+
+          <div x-show="isBlockChanged(block.block_data.block_id)"
+               class="mt-2 flex items-center gap-2">
+            <span class="text-xs text-red-600 font-medium">Modified</span>
+            <button @click="resetBlock(block.block_data.block_id)"
+                    class="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600">
+              Reset Block
+            </button>
+          </div>
+        </div>
+      </template>
+  </div>
+
+  <form method="POST" action="{{ url_for('proofing.tagging.section', text=text.slug, section=section.slug) }}">
+    <input type="hidden" name="parse_data" x-ref="parseDataInput">
+  </form>
+
+  <div x-show="previewJson" class="mt-4 bg-slate-50 rounded border border-slate-200 p-4">
+    <div class="flex justify-between items-center mb-2">
+      <h4 class="font-bold text-sm">Generated Structure (JSON)</h4>
+      <div class="flex gap-2">
+        <button @click="copyToClipboard()" type="button" class="btn btn-basic text-xs">Copy to clipboard</button>
+        <button @click="previewJson = ''" type="button" class="btn btn-basic text-xs">Close</button>
+      </div>
+    </div>
+    <pre class="text-xs overflow-auto max-h-96 p-3 rounded border border-slate-300"
+         x-text="previewJson"></pre>
+  </div>
+</div>
+
+{% endif %}
+
+<script>
+function batchEditParse() {
+  return {
+    blocks: {{ blocks|tojson }},
+    helpOpen: false,
+    statusMessage: '',
+    statusSuccess: false,
+    isSubmitting: false,
+    previewJson: '',
+    changedBlocks: new Set(),
+    displayScript: 'devanagari',
+
+    searchPattern: '',
+    replacePattern: '',
+    replaceGlobal: true,
+    replaceCaseInsensitive: false,
+    replacePreview: [],
+    searchReplaceStatus: '',
+    searchReplaceSuccess: false,
+
+    init() {
+      this.blocks.forEach(block => {
+        block.block_data.originalTokens = JSON.parse(JSON.stringify(block.block_data.tokens));
+      });
+    },
+
+    transliterate(text) {
+      if (!text || typeof Sanscript === 'undefined') return text;
+      try {
+        return Sanscript.t(text, 'slp1', this.displayScript);
+      } catch (e) {
+        console.error('Transliteration error:', e);
+        return text;
+      }
+    },
+
+    transliterateBack(text) {
+      if (!text || typeof Sanscript === 'undefined') return text;
+      try {
+        return Sanscript.t(text, this.displayScript, 'slp1');
+      } catch (e) {
+        console.error('Transliteration error:', e);
+        return text;
+      }
+    },
+
+    getRowColor(parse) {
+      if (!parse) return 'bg-green-50';
+
+      const posMatch = parse.match(/pos=([a-z]+)/);
+      if (!posMatch) return 'bg-green-50';
+
+      const pos = posMatch[1];
+      if (pos === 'n') return 'bg-orange-50';
+      if (pos === 'v') return 'bg-blue-50';
+      return 'bg-green-50';
+    },
+
+    markBlockChanged(blockId) {
+      this.changedBlocks.add(`${blockId}`);
+    },
+
+    isBlockChanged(blockId) {
+      return this.changedBlocks.has(`${blockId}`);
+    },
+
+    resetBlock(blockId) {
+      const block = this.blocks.find(b => b.block_data.block_id === blockId);
+      if (!block) return;
+
+      block.block_data.tokens = JSON.parse(JSON.stringify(block.block_data.originalTokens));
+      this.changedBlocks.delete(`${blockId}`);
+    },
+
+    addToken(blockId) {
+      const block = this.blocks.find(b => b.block_data.block_id === blockId);
+      if (!block) return;
+
+      block.block_data.tokens.push({
+        form: '',
+        base: '',
+        parse: ''
+      });
+      this.markBlockChanged(blockId);
+    },
+
+    removeToken(blockId, tokenIdx) {
+      const block = this.blocks.find(b => b.block_data.block_id === blockId);
+      if (!block) return;
+
+      block.block_data.tokens.splice(tokenIdx, 1);
+      this.markBlockChanged(blockId);
+    },
+
+    handleKeyNav(event, blockId, tokenIdx, field) {
+      const key = event.key;
+
+      if (key === 'ArrowDown') {
+        event.preventDefault();
+        this.focusNextRow(blockId, tokenIdx, field);
+      } else if (key === 'ArrowUp') {
+        event.preventDefault();
+        this.focusPrevRow(blockId, tokenIdx, field);
+      } else if (key === 'Enter') {
+        event.preventDefault();
+        this.addTokenBelow(blockId, tokenIdx, field);
+      }
+    },
+
+    focusNextRow(blockId, tokenIdx, field) {
+      const block = this.blocks.find(b => b.block_data.block_id === blockId);
+      if (!block) return;
+
+      const nextIdx = tokenIdx + 1;
+      if (nextIdx < block.block_data.tokens.length) {
+        this.$nextTick(() => {
+          const selector = `input[data-block-id="${blockId}"][data-row-idx="${nextIdx}"][data-field="${field}"]`;
+          const nextInput = document.querySelector(selector);
+          if (nextInput) nextInput.focus();
+        });
+      }
+    },
+
+    focusPrevRow(blockId, tokenIdx, field) {
+      const prevIdx = tokenIdx - 1;
+      if (prevIdx >= 0) {
+        this.$nextTick(() => {
+          const selector = `input[data-block-id="${blockId}"][data-row-idx="${prevIdx}"][data-field="${field}"]`;
+          const prevInput = document.querySelector(selector);
+          if (prevInput) prevInput.focus();
+        });
+      }
+    },
+
+    addTokenBelow(blockId, tokenIdx, field) {
+      const block = this.blocks.find(b => b.block_data.block_id === blockId);
+      if (!block) return;
+
+      block.block_data.tokens.splice(tokenIdx + 1, 0, {
+        form: '',
+        base: '',
+        parse: ''
+      });
+      this.markBlockChanged(blockId);
+
+      this.$nextTick(() => {
+        const selector = `input[data-block-id="${blockId}"][data-row-idx="${tokenIdx + 1}"][data-field="${field}"]`;
+        const newInput = document.querySelector(selector);
+        if (newInput) newInput.focus();
+      });
+    },
+
+    previewChanges() {
+      const changedBlocksData = [];
+
+      this.blocks.forEach(block => {
+        if (this.isBlockChanged(block.block_data.block_id)) {
+          changedBlocksData.push(block.block_data);
+        }
+      });
+
+      const structure = {
+        text: '{{ text.slug }}',
+        blocks: changedBlocksData
+      };
+
+      this.previewJson = JSON.stringify(structure, null, 2);
+      this.statusMessage = `${changedBlocksData.length} block(s) have been modified`;
+      this.statusSuccess = false;
+    },
+
+    copyToClipboard() {
+      navigator.clipboard.writeText(this.previewJson).then(() => {
+        this.statusMessage = 'Copied to clipboard!';
+        this.statusSuccess = true;
+        setTimeout(() => {
+          this.statusMessage = '';
+        }, 2000);
+      }).catch(err => {
+        this.statusMessage = 'Failed to copy';
+        console.error('Copy failed:', err);
+      });
+    },
+
+    submitChanges() {
+      if (this.isSubmitting) return;
+
+      const changedBlocksData = [];
+
+      this.blocks.forEach(block => {
+        if (this.isBlockChanged(block.block_data.block_id)) {
+          changedBlocksData.push(block.block_data);
+        }
+      });
+
+      if (changedBlocksData.length === 0) {
+        alert('No changes detected');
+        return;
+      }
+
+      if (!confirm(`Save changes to ${changedBlocksData.length} block(s)?`)) return;
+
+      this.isSubmitting = true;
+      this.statusMessage = 'Saving changes...';
+
+      const structure = {
+        text: '{{ text.slug }}',
+        blocks: changedBlocksData
+      };
+
+      this.$refs.parseDataInput.value = JSON.stringify(structure);
+      this.$refs.parseDataInput.form.submit();
+    },
+
+    previewParseReplace() {
+      if (!this.searchPattern.trim()) {
+        this.searchReplaceStatus = 'Please enter a search pattern';
+        this.searchReplaceSuccess = false;
+        return;
+      }
+
+      this.replacePreview = [];
+      this.searchReplaceStatus = '';
+
+      try {
+        const flags = (this.replaceGlobal ? 'g' : '') + (this.replaceCaseInsensitive ? 'i' : '');
+        const regex = new RegExp(this.searchPattern, flags);
+        let matchCount = 0;
+
+        this.blocks.forEach(block => {
+          block.block_data.tokens.forEach((token, tokenIdx) => {
+            if (!token.parse) return;
+
+            const newParse = token.parse.replace(regex, this.replacePattern);
+            if (newParse !== token.parse) {
+              this.replacePreview.push({
+                blockId: block.block_data.block_id,
+                blockSlug: block.block_data.block_slug,
+                tokenIdx: tokenIdx,
+                before: token.parse,
+                after: newParse,
+                token: token
+              });
+              matchCount++;
+            }
+          });
+        });
+
+        if (matchCount === 0) {
+          this.searchReplaceStatus = 'No matches found';
+          this.searchReplaceSuccess = false;
+        } else {
+          this.searchReplaceStatus = `Found ${matchCount} match(es). Review and apply changes.`;
+          this.searchReplaceSuccess = false;
+        }
+      } catch (e) {
+        this.searchReplaceStatus = `Invalid regex: ${e.message}`;
+        this.searchReplaceSuccess = false;
+      }
+    },
+
+    applyParseReplace() {
+      if (this.replacePreview.length === 0) return;
+
+      this.replacePreview.forEach(item => {
+        item.token.parse = item.after;
+        this.markBlockChanged(item.blockId);
+      });
+
+      const count = this.replacePreview.length;
+      this.searchReplaceStatus = `Applied changes to ${count} token(s)`;
+      this.searchReplaceSuccess = true;
+      this.replacePreview = [];
+
+      setTimeout(() => {
+        this.searchReplaceStatus = '';
+      }, 3000);
+    },
+
+    cancelParseReplace() {
+      this.replacePreview = [];
+      this.searchReplaceStatus = 'Changes cancelled';
+      this.searchReplaceSuccess = false;
+      setTimeout(() => {
+        this.searchReplaceStatus = '';
+      }, 2000);
+    },
+
+    clearSearchReplace() {
+      this.searchPattern = '';
+      this.replacePattern = '';
+      this.replacePreview = [];
+      this.searchReplaceStatus = '';
+    }
+  };
+}
+</script>
+
+</div>
 {% endblock %}

@@ -141,6 +141,34 @@ def text_resources(slug):
     return render_template("texts/text-resources.html", text=text)
 
 
+# TODO: enable once this is protected.
+def plain_text_download(slug):
+    text = q.text(slug)
+    if text is None:
+        abort(404)
+
+    def generate():
+        """Generator to avoid loading the whole text in memory (for massive texts)."""
+        is_first = True
+        for section in text.sections:
+            for block in section.blocks:
+                if not is_first:
+                    yield "\n\n"
+                is_first = False
+
+                yield f"# {block.slug}\n"
+                xml = DET.fromstring(block.xml)
+                for el in xml.iter():
+                    if el.tag == "l":
+                        el.tail = "\n"
+                    el.tag = None
+                yield ET.tostring(xml, encoding="unicode").strip()
+
+    response = Response(generate(), mimetype="text/plain")
+    response.headers["Content-Disposition"] = f'attachment; filename="{slug}.txt"'
+    return response
+
+
 @bp.route("/<text_slug>/<section_slug>")
 def section(text_slug, section_slug):
     """Show a specific section of a text."""

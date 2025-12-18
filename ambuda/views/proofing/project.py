@@ -225,6 +225,7 @@ def summary(slug):
     if project_ is None:
         abort(404)
 
+    assert project_
     session = q.get_session()
     stmt = (
         sqla.select(db.Revision)
@@ -251,6 +252,7 @@ def activity(slug):
     if project_ is None:
         abort(404)
 
+    assert project_
     session = q.get_session()
     stmt = (
         sqla.select(db.Revision)
@@ -332,6 +334,7 @@ def download_as_xml(slug):
     if project_ is None:
         abort(404)
 
+    assert project_
     project_meta = {
         "title": project_.display_title,
         "author": project_.author,
@@ -362,6 +365,7 @@ def stats(slug):
     if project_ is None:
         abort(404)
 
+    assert project_
     stats_ = calculate_stats(project_)
     return render_template(
         "proofing/projects/stats.html", project=project_, stats=stats_
@@ -468,9 +472,11 @@ def confirm_changes(slug):
     project_ = q.project(slug)
     if project_ is None:
         abort(404)
+
     LOG.debug(
         f"{__name__}: confirm_changes {request.method} > Keys: {list(request.form.keys())}, Items: {list(request.form.items())}"
     )
+    assert project_
     form = ConfirmChangesForm(request.form)
     if not form.validate():
         flash("Invalid input.", "danger")
@@ -560,6 +566,7 @@ def batch_ocr(slug):
     if project_ is None:
         abort(404)
 
+    assert project_
     if request.method == "POST":
         task = ocr_tasks.run_ocr_for_project(
             app_env=current_app.config["AMBUDA_ENVIRONMENT"],
@@ -653,6 +660,7 @@ def batch_editing(slug):
     if project_ is None:
         abort(404)
 
+    assert project_
     if request.method == "POST":
         data = request.form.get("structure_data")
         if not data:
@@ -848,6 +856,7 @@ def batch_llm_structuring(slug):
     if project_ is None:
         abort(404)
 
+    assert project_
     if request.method == "POST":
         task = llm_structuring_tasks.run_structuring_for_project(
             app_env=current_app.config["AMBUDA_ENVIRONMENT"],
@@ -919,6 +928,7 @@ def publish_config(slug):
     if project_ is None:
         abort(404)
 
+    assert project_
     if request.method == "POST":
         publish_json = request.form.get("publish_config", "")
         default = lambda: render_template(
@@ -972,6 +982,7 @@ def publish_preview(slug):
     if project_ is None:
         abort(404)
 
+    assert project_
     config_page = lambda: redirect(
         url_for("proofing.project.publish_config", slug=slug)
     )
@@ -1102,8 +1113,8 @@ def publish_create(slug):
     if project_ is None:
         abort(404)
 
+    assert project_
     lambda config_page: redirect(url_for("proofing.project.publish_config", slug=slug))
-
     if not project_.config:
         flash("No publish configuration found. Please configure first.", "error")
         return config_page()

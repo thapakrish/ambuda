@@ -54,6 +54,8 @@ class Text(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=True)
     #: Timestamp at which this text was published.
     published_at = Column(DateTime, nullable=True)
+    #: Timestamp at which this text was updated.
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     genre_id = foreign_key("genres.id", nullable=True)
     #: The project that created this text.
@@ -117,6 +119,9 @@ class TextSection(Base):
     blocks = relationship(
         "TextBlock", backref="section", order_by=lambda: TextBlock.n, cascade="delete"
     )
+
+    def __str__(self) -> str:
+        return self.slug
 
 
 text_block_associations = Table(

@@ -194,7 +194,7 @@ def is_vidyut_subanta(x):
 
 
 @bp.app_template_test("tinanta")
-def is_vidyut_subanta(x):
+def is_vidyut_tinanta(x):
     return isinstance(x, PadaEntry.Tinanta)
 
 
@@ -317,6 +317,7 @@ def _create_lakara_table(
 
 @functools.cache
 def get_kosha():
+    """Singleton."""
     return Kosha(Path(current_app.config["VIDYUT_DATA_DIR"]) / "kosha")
 
 

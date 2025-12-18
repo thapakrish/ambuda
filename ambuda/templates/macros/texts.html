@@ -1,5 +1,5 @@
+{# List of all texts #}
 {% macro all_texts(text_entries) %}
-
 <ul class="mb-24">
 {% for entry in text_entries %}
 <li class="even:bg-slate-50 p-2">
@@ -19,7 +19,7 @@
   </h2>
 
   {% if entry.children %}
-  <ul class="list-disc my-4 pl-4">
+  <ul class="list-disc mt-4 pl-4">
     {% for child in entry.children %}
       {% set url = url_for('texts.text', slug=child.text.slug) %}
       <li>

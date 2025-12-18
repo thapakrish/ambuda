@@ -1,6 +1,10 @@
 {% extends 'proofing/base.html' %}
+{% import "macros/components.html" as components %}
+
 
 {% block content %}
+{{ components.flash_messages() }}
+
 <div class="prose">
 
 <h1>{{ text.title|devanagari }}</h1>
@@ -11,10 +15,27 @@
 <p>{{ num_parsed_blocks }} / {{ num_blocks}} blocks have parse data.</p>
 {% endif %}
 
-<ul>
+{% if current_user.is_p2 %}
+<h2>Batch Operations</h2>
+<form method="POST" action="{{ url_for('proofing.tagging.batch_tag', slug=text.slug) }}"
+      onsubmit="return confirm('Start batch tagging with Dharmamitra for all {{ num_blocks }} blocks? This may take several minutes.');">
+  <button type="submit" class="btn btn-submit">
+    Batch Tag with Dharmamitra
+  </button>
+  <p class="text-sm text-slate-600">
+    Automatically tag all blocks in this text using Dharmamitra Sanskrit grammar processor.
+    This will create TokenBlocks and TokenRevisions for each block.
+  </p>
+</form>
+{% endif %}
+
+<h2>Sections</h2>
+</div>
+
+<ul class="grid grid-cols-10 gap-4 text-center a-hover-underline">
 {% for section in text.sections %}
-{% set url = url_for("proofing.tagging.section", text_slug=text.slug, section_slug=section.slug)  %}
-<li><a href="{{ url }}">{{ section.title }}</a></li>
+  {% set url = url_for("proofing.tagging.section", text=text.slug, section=section.slug) %}
+  <li><a class="block" href="{{ url }}">{{ section.slug }}</a></li>
 {% endfor %}
 </ul>
 

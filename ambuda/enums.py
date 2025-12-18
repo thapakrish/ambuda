@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, StrEnum
 
 
 class SiteRole(str, Enum):
@@ -27,3 +27,14 @@ class SitePageStatus(str, Enum):
     R2 = "reviewed-2"
     #: Not relevant.
     SKIP = "skip"
+
+
+class TokenBlockStatus(StrEnum):
+    """Defines token block statuses."""
+
+    #: Needs more work
+    R0 = "r0"
+    #: Proofread once.
+    R1 = "r1"
+    #: Proofread twice.
+    R2 = "r2"

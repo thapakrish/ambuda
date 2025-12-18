@@ -49,6 +49,7 @@ class Category(str, Enum):
     SITE = "Site"
     DISCUSSION = "Discussion"
     BLOG = "Blog"
+    PARSE_DATA = "Tagging"
 
 
 @dataclass
@@ -93,7 +94,7 @@ MODEL_CONFIG = [
     ModelConfig(
         model=db.BlockParse,
         list_columns=["id", "text_id", "block_id"],
-        category=Category.TEXTS,
+        category=Category.PARSE_DATA,
         read_only=True,
     ),
     ModelConfig(
@@ -193,6 +194,12 @@ MODEL_CONFIG = [
         read_only=True,
     ),
     ModelConfig(
+        model=db.RevisionBatch,
+        list_columns=["id", "user_id", "created_at"],
+        category=Category.PROOFING,
+        read_only=True,
+    ),
+    ModelConfig(
         model=db.Role,
         list_columns=["id", "name"],
         category=Category.AUTH,
@@ -246,6 +253,24 @@ MODEL_CONFIG = [
         model=db.Thread,
         list_columns=["id", "board_id", "title", "created_at"],
         category=Category.DISCUSSION,
+        read_only=True,
+    ),
+    ModelConfig(
+        model=db.Token,
+        list_columns=["id", "form", "base", "parse", "block_id", "order"],
+        category=Category.PARSE_DATA,
+        read_only=True,
+    ),
+    ModelConfig(
+        model=db.TokenBlock,
+        list_columns=["id", "text_id", "block_id"],
+        category=Category.PARSE_DATA,
+        read_only=True,
+    ),
+    ModelConfig(
+        model=db.TokenRevision,
+        list_columns=["id", "token_block_id", "author_id"],
+        category=Category.PARSE_DATA,
         read_only=True,
     ),
     ModelConfig(

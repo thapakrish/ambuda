@@ -19,6 +19,8 @@ def _inner_xml(el):
 
 
 def _rewrite_to_tei_xml(xml):
+    # TODO: footnote --> <note xml:id="..." type="footnote">
+    # TODO: [^1] --> <ref target="#..." />
     for el in xml.iter():
         match el.tag:
             case "verse":

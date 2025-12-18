@@ -25,6 +25,7 @@ app = Celery(
     include=[
         "ambuda.tasks.projects",
         "ambuda.tasks.ocr",
+        "ambuda.tasks.tagging",
     ],
 )
 app.conf.update(

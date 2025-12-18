@@ -1,4 +1,5 @@
 from sqlalchemy import update
+import sqlalchemy as sqla
 
 from ambuda import database as db
 from ambuda import queries as q
@@ -62,5 +63,60 @@ def add_revision(
         batch_id=batch_id,
     )
     session.add(revision_)
+    session.commit()
+    return new_version
+
+
+def add_token_revision(
+    token_block: db.TokenBlock,
+    data: str,
+    version: int,
+    author_id: int,
+    block_id: int,
+) -> int:
+    session = q.get_session()
+
+    # Update with optimistic locking
+    new_version = version + 1
+    result = session.execute(
+        update(db.TokenBlock)
+        .where(
+            (db.TokenBlock.id == token_block.id) & (db.TokenBlock.version == version)
+        )
+        .values(version=new_version)
+    )
+
+    num_rows_changed = result.rowcount
+    if num_rows_changed == 0:
+        raise EditError(
+            f"Edit conflict for TokenBlock {token_block.id}, version {version}"
+        )
+
+    assert num_rows_changed == 1
+
+    token_revision = db.TokenRevision(
+        token_block_id=token_block.id,
+        author_id=author_id,
+        data=data,
+    )
+    session.add(token_revision)
+    session.flush()
+
+    session.execute(sqla.delete(db.Token).where(db.Token.block_id == block_id))
+    for order, line in enumerate(data.strip().split("\n")):
+        if line.strip():
+            parts = line.split("\t")
+            if len(parts) == 3:
+                form, lemma, parse = parts
+                if form.strip() and lemma.strip() and parse.strip():
+                    new_token = db.Token(
+                        form=form.strip(),
+                        base=lemma.strip(),
+                        parse=parse.strip(),
+                        block_id=block_id,
+                        order=order,
+                    )
+                    session.add(new_token)
+
     session.commit()
     return new_version

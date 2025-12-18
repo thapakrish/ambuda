@@ -1,6 +1,6 @@
 """Utilities for LLM-based text structuring."""
 
-import google.generativeai as genai
+from google import genai
 
 
 DEFAULT_STRUCTURING_PROMPT = """You are a highly specialized text structuring assistant. Your task
@@ -76,9 +76,8 @@ def run(
     if not api_key:
         raise ValueError("GEMINI_API_KEY not configured")
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.5-flash")
+    client = genai.Client(api_key=api_key)
     prompt = prompt_template.format(content=content)
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
 
     return response.text
