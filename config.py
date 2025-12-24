@@ -21,7 +21,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask
+
 
 # Load dotenv early so that `_env` will work in the class definitions below.
 load_dotenv()
@@ -310,6 +310,8 @@ def create_config_only_app(config_name: str):
     We use this function in Celery to get access to the app context while
     avoiding any other setup work related to the application.
     """
+    from flask import Flask
+
     load_dotenv(".env")
     app = Flask(__name__)
     app.config.from_object(load_config_object(config_name))

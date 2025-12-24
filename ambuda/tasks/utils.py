@@ -1,6 +1,12 @@
 import logging
+from contextlib import contextmanager
 
 from celery import states
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+import config
+from ambuda import queries
 
 
 class TaskStatus:
@@ -70,3 +76,29 @@ class LocalTaskStatus(TaskStatus):
 
     def failure(self, message: str):
         logging.info(f"Failed. ({message})")
+
+
+@contextmanager
+def get_db_session(app_env: str, engine=None):
+    """Get a database session for the given app environment.
+
+    `engine` is for dependency injection.
+    """
+    cfg = config.load_config_object(app_env)
+
+    if engine is None:
+        engine = create_engine(cfg.SQLALCHEMY_DATABASE_URI)
+        should_dispose = True
+    else:
+        should_dispose = False
+
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+    q = queries.Query(session)
+
+    try:
+        yield session, q, cfg
+    finally:
+        session.close()
+        if should_dispose:
+            engine.dispose()

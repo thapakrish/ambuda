@@ -5,12 +5,11 @@ from celery.result import GroupResult
 
 from ambuda import consts
 from ambuda import database as db
-from ambuda import queries as q
 from ambuda.enums import SitePageStatus
 from ambuda.tasks import app
+from ambuda.tasks.utils import get_db_session
 from ambuda.utils import llm_structuring
 from ambuda.utils.revisions import add_revision
-from config import create_config_only_app
 
 
 def _run_structuring_for_page_inner(
@@ -19,15 +18,13 @@ def _run_structuring_for_page_inner(
     page_slug: str,
     prompt_template: str = llm_structuring.DEFAULT_STRUCTURING_PROMPT,
 ) -> int:
-    flask_app = create_config_only_app(app_env)
-    with flask_app.app_context():
-        bot_user = q.user(consts.BOT_USERNAME)
+    with get_db_session(app_env) as (session, query, config_obj):
+        bot_user = query.user(consts.BOT_USERNAME)
         if not bot_user:
             raise ValueError(f'User "{consts.BOT_USERNAME}" is not defined.')
 
-        session = q.get_session()
-        project = q.project(project_slug)
-        page = q.page(project.id, page_slug)
+        project = query.project(project_slug)
+        page = query.page(project.id, page_slug)
 
         latest_revision = (
             session.query(db.Revision)
@@ -36,7 +33,7 @@ def _run_structuring_for_page_inner(
             .first()
         )
 
-        api_key = flask_app.config.get("GEMINI_API_KEY")
+        api_key = config_obj.GEMINI_API_KEY
         if not api_key:
             raise ValueError("GEMINI_API_KEY not configured")
 
@@ -87,10 +84,8 @@ def run_structuring_for_project(
     project: db.Project,
     prompt_template: str = llm_structuring.DEFAULT_STRUCTURING_PROMPT,
 ) -> GroupResult | None:
-    flask_app = create_config_only_app(app_env)
-    with flask_app.app_context():
-        # version == 0 means the page is brand new (= zero content).
-        edited_pages = [p for p in project.pages if p.version > 0]
+    # version == 0 means the page is brand new (= zero content).
+    edited_pages = [p for p in project.pages if p.version > 0]
 
     if edited_pages:
         tasks = group(

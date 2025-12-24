@@ -1,33 +1,32 @@
 """Utilities for exporting texts in various formats."""
 
 import csv
+import logging
 import tempfile
 from enum import StrEnum
 from functools import cached_property
 from pathlib import Path
-from typing import Callable
-from lxml import etree
 from xml.etree import ElementTree as ET
 
-import defusedxml.ElementTree as DET
-import requests
-import typst
-from flask import current_app
+from lxml import etree
 from pydantic import BaseModel
+from sqlalchemy.orm import object_session
 from vidyut.lipi import transliterate, Scheme
 
 import ambuda.database as db
 from ambuda.utils.datetime import utc_datetime_timestamp
 from ambuda.s3_utils import S3Path
-from ambuda import queries as q
 
 
 EXPORT_DIR = Path(__file__).parent
+logger = logging.getLogger(__name__)
 
 
-def font_directory() -> Path:
-    """Get a path to our font files, loading from S3 if necessary."""
-    log = current_app.logger
+def font_directory(s3_bucket: str) -> Path:
+    """Get a path to our font files, loading from S3 if necessary.
+
+    :param s3_bucket: the S3 bucket name
+    """
 
     temp_dir = Path(tempfile.gettempdir())
     fonts_dir = temp_dir / "ambuda_fonts"
@@ -35,29 +34,29 @@ def font_directory() -> Path:
 
     font_path = fonts_dir / "NotoSerifDevanagari.ttf"
     if font_path.exists():
-        log.info(f"Font path exists: {font_path}")
+        logger.info(f"Font path exists: {font_path}")
         return fonts_dir
 
-    bucket = current_app.config["S3_BUCKET"]
     try:
         # TODO: variable fonts are not supported well in typst.
         path = S3Path(
-            bucket, "assets/fonts/NotoSerifDevanagari-VariableFont_wdth,wght.ttf"
+            s3_bucket, "assets/fonts/NotoSerifDevanagari-VariableFont_wdth,wght.ttf"
         )
-        log.info(f"Downloading font from S3: {path.path}")
+        logger.info(f"Downloading font from S3: {path.path}")
         path.download_file(font_path)
     except Exception as e:
-        log.error(f"Exception while downloading font: {e}")
+        logger.error(f"Exception while downloading font: {e}")
     return fonts_dir
 
 
-def create_xml_file(text: db.Text, file_path: str) -> None:
+def create_xml_file(text: db.Text, out_path: Path) -> None:
     """Create a TEI XML file from the given path.
 
     TEI XML is our canonical file export format from which all other exports are derived.
     It contains structured text data and rich metadata.
     """
-    with etree.xmlfile(file_path, encoding="utf-8") as xf:
+
+    with etree.xmlfile(out_path, encoding="utf-8") as xf:
         xf.write_declaration()
 
         with xf.element("TEI", xmlns="http://www.tei-c.org/ns/1.0"):
@@ -93,7 +92,8 @@ def create_xml_file(text: db.Text, file_path: str) -> None:
                             )
 
             # Main text
-            session = q.get_session()
+            session = object_session(text)
+            assert session
             with xf.element("text"):
                 with xf.element("body"):
                     for section in text.sections:
@@ -104,11 +104,8 @@ def create_xml_file(text: db.Text, file_path: str) -> None:
                         session.expire(section)
 
 
-def create_plain_text(text: db.Text, file_path: str) -> None:
+def create_plain_text(text: db.Text, file_path: Path, xml_path: Path) -> None:
     timestamp = utc_datetime_timestamp()
-
-    txt_path = Path(file_path)
-    xml_path = txt_path.parent / f"{text.slug}.xml"
 
     if not xml_path.exists():
         raise FileNotFoundError(
@@ -145,12 +142,17 @@ def create_plain_text(text: db.Text, file_path: str) -> None:
                         del elem.getparent()[0]
 
 
-def create_pdf(text: db.Text, file_path: str) -> None:
-    log = current_app.logger
-    timestamp = utc_datetime_timestamp()
+def create_pdf(text: db.Text, file_path: Path, s3_bucket: str, xml_path: Path) -> None:
+    """Create a PDF file from the given text.
 
-    pdf_path = Path(file_path)
-    xml_path = pdf_path.parent / f"{text.slug}.xml"
+    :param text: the text to export
+    :param file_path: where to write the PDF
+    :param s3_bucket: the S3 bucket name (needed for font downloads)
+    :param xml_path: explicit path to XML file, if None will guess based on file_path
+    """
+    import typst
+
+    timestamp = utc_datetime_timestamp()
 
     if not xml_path.exists():
         raise FileNotFoundError(
@@ -207,24 +209,26 @@ def create_pdf(text: db.Text, file_path: str) -> None:
         typst_file.write(footer)
 
     try:
-        font_paths = [font_directory()]
+        font_paths = [font_directory(s3_bucket)]
         _, warnings = typst.compile_with_warnings(
             temp_typst_path,
             font_paths=font_paths,
             output=file_path,
         )
         for warning in warnings:
-            log.info(f"Typst warning: {warning.message}")
-            log.info(f"Typst trace: {warning.trace}")
+            logger.info(f"Typst warning: {warning.message}")
+            logger.info(f"Typst trace: {warning.trace}")
     finally:
         if Path(temp_typst_path).exists():
             Path(temp_typst_path).unlink()
 
 
-def create_tokens(text: db.Text, file_path: str) -> None:
-    session = q.get_session()
+def maybe_create_tokens(text: db.Text, out_path: Path) -> None:
+    session = object_session(text)
+    assert session
 
-    with open(file_path, "w") as f:
+    has_data = False
+    with open(out_path, "w") as f:
         writer = csv.writer(f, delimiter=",")
 
         results = (
@@ -243,8 +247,12 @@ def create_tokens(text: db.Text, file_path: str) -> None:
                 form, base, parse_data = fields
                 parse_data = parse_data.replace(",", " ")
                 writer.writerow([block_slug, form, base, parse_data])
+                has_data = True
 
             session.expire(block_parse)
+
+    if not has_data:
+        out_path.unlink()
 
 
 class ExportType(StrEnum):
@@ -257,7 +265,6 @@ class ExportType(StrEnum):
 class ExportConfig(BaseModel):
     label: str
     type: ExportType
-    fn: Callable[[db.Text, str], None]
     slug_pattern: str
     mime_type: str
 
@@ -271,9 +278,6 @@ class ExportConfig(BaseModel):
     def matches(self, filename: str) -> bool:
         return filename.endswith(self.suffix)
 
-    def write_to_local_file(self, text: db.Text, path: Path):
-        self.fn(text, str(path))
-
 
 EXPORTS = [
     ExportConfig(
@@ -281,27 +285,23 @@ EXPORTS = [
         type=ExportType.XML,
         slug_pattern="{}.xml",
         mime_type="application/xml",
-        fn=create_xml_file,
     ),
     ExportConfig(
         label="Plain text",
         type=ExportType.PLAIN_TEXT,
         slug_pattern="{}.txt",
         mime_type="text/csv",
-        fn=create_plain_text,
     ),
     ExportConfig(
         label="PDF (Devanagari)",
         type=ExportType.PDF,
         slug_pattern="{}-devanagari.pdf",
         mime_type="application/pdf",
-        fn=create_pdf,
     ),
     ExportConfig(
         label="Token data (CSV)",
         type=ExportType.TOKENS,
         slug_pattern="{}-tokens.csv",
         mime_type="text/csv",
-        fn=create_tokens,
     ),
 ]

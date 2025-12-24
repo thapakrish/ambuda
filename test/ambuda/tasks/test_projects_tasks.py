@@ -19,11 +19,16 @@ def _create_sample_pdf(output_path: str, num_pages: int):
 
 def test_create_project_inner(flask_app, s3_mocks):
     with flask_app.app_context():
+        from ambuda.queries import get_engine
+
         project = q.project("test-cool-project")
         assert project is None
 
         f = tempfile.NamedTemporaryFile()
         _create_sample_pdf(f.name, num_pages=10)
+
+        # Pass the Flask app's engine to share the same :memory: database
+        engine = get_engine()
 
         projects.create_project_inner(
             display_title="Test cool project",
@@ -32,6 +37,7 @@ def test_create_project_inner(flask_app, s3_mocks):
             app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
             creator_id=1,
             task_status=ambuda.tasks.utils.LocalTaskStatus(),
+            engine=engine,
         )
 
         project = q.project("test-cool-project")

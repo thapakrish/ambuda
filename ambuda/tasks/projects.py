@@ -13,11 +13,9 @@ from slugify import slugify
 from sqlalchemy import select
 
 from ambuda import database as db
-from ambuda import queries as q
 from ambuda.s3_utils import S3Path
 from ambuda.tasks import app
-from ambuda.tasks.utils import CeleryTaskStatus, TaskStatus
-from config import create_config_only_app
+from ambuda.tasks.utils import CeleryTaskStatus, TaskStatus, get_db_session
 
 
 def _split_pdf_into_pages(
@@ -41,16 +39,18 @@ def _split_pdf_into_pages(
 
 
 def _add_project_to_database(
-    display_title: str, slug: str, num_pages: int, creator_id: int
+    session, display_title: str, slug: str, num_pages: int, creator_id: int
 ):
     """Create a project on the database.
 
+    :param session: database session
     :param display_title: the project title
+    :param slug: the project slug
     :param num_pages: the number of pages in the project
+    :param creator_id: the user ID of the creator
     """
 
     logging.info(f"Creating project (slug = {slug}) ...")
-    session = q.get_session()
     board = db.Board(title=f"{slug} discussion board")
     session.add(board)
     session.flush()
@@ -85,6 +85,7 @@ def create_project_inner(
     app_environment: str,
     creator_id: int,
     task_status: TaskStatus,
+    engine=None,
 ):
     """Split the given PDF into pages and register the project on the database.
 
@@ -97,28 +98,29 @@ def create_project_inner(
     :param app_environment: the app environment, e.g. `"development"`.
     :param creator_id: the user that created this project.
     :param task_status: tracks progress on the task.
+    :param engine: optional SQLAlchemy engine. Tests should pass this to share
+                   the same :memory: database.
     """
     logging.info(f'Received upload task "{display_title}" for path {pdf_path}.')
 
     # Tasks must be idempotent. Exit if the project already exists.
-    app = create_config_only_app(app_environment)
-    with app.app_context():
-        session = q.get_session()
+    with get_db_session(app_environment, engine=engine) as (session, query, config_obj):
         slug = slugify(display_title)
         stmt = select(db.Project).filter_by(slug=slug)
         project = session.scalars(stmt).first()
 
-    if project:
-        raise ValueError(
-            f'Project "{display_title}" already exists. Please choose a different title.'
-        )
+        if project:
+            raise ValueError(
+                f'Project "{display_title}" already exists. Please choose a different title.'
+            )
 
-    pdf_path = Path(pdf_path)
-    pages_dir = Path(output_dir)
+        pdf_path = Path(pdf_path)
+        pages_dir = Path(output_dir)
 
-    num_pages = _split_pdf_into_pages(Path(pdf_path), Path(pages_dir), task_status)
-    with app.app_context():
+        num_pages = _split_pdf_into_pages(Path(pdf_path), Path(pages_dir), task_status)
+
         _add_project_to_database(
+            session=session,
             display_title=display_title,
             slug=slug,
             num_pages=num_pages,
@@ -126,7 +128,10 @@ def create_project_inner(
         )
 
         move_project_pdf_to_s3_inner(
-            project_slug=slug, pdf_path=str(pdf_path), app_environment=app_environment
+            session=session,
+            config_obj=config_obj,
+            project_slug=slug,
+            pdf_path=str(pdf_path),
         )
 
     task_status.success(num_pages, slug)
@@ -157,38 +162,42 @@ def create_project(
     )
 
 
-def move_project_pdf_to_s3_inner(*, project_slug, pdf_path, app_environment):
-    """Temporary task to move project PDFs to S3."""
+def move_project_pdf_to_s3_inner(*, session, config_obj, project_slug, pdf_path):
+    """Temporary task to move project PDFs to S3.
 
-    # Tasks must be idempotent. Exit if the project already exists.
-    app = create_config_only_app(app_environment)
-    with app.app_context():
-        session = q.get_session()
-        stmt = select(db.Project).filter_by(slug=project_slug)
-        project = session.scalars(stmt).first()
+    :param session: database session
+    :param config_obj: config object
+    :param project_slug: the project slug
+    :param pdf_path: path to the PDF file
+    """
 
-        s3_bucket = app.config["S3_BUCKET"]
-        if not s3_bucket:
-            logging.info(f"No s3 bucket found")
-            return
+    stmt = select(db.Project).filter_by(slug=project_slug)
+    project = session.scalars(stmt).first()
 
-        s3_dest = S3Path(
-            bucket=s3_bucket, key=f"proofing/{project.uuid}/pdf/source.pdf"
-        )
-        if s3_dest.exists():
-            logging.info(f"S3 path {s3_dest} already exists.")
-            return
+    s3_bucket = config_obj.S3_BUCKET
+    if not s3_bucket:
+        logging.info(f"No s3 bucket found")
+        return
 
-        s3_dest.upload_file(pdf_path)
-        logging.info(f"Uploaded {project.id} PDF path to {s3_dest}.")
+    s3_dest = S3Path(bucket=s3_bucket, key=f"proofing/{project.uuid}/pdf/source.pdf")
+    if s3_dest.exists():
+        logging.info(f"S3 path {s3_dest} already exists.")
+        return
 
-        Path(pdf_path).unlink()
-        logging.info(f"Removed local file {pdf_path}.")
+    s3_dest.upload_file(pdf_path)
+    logging.info(f"Uploaded {project.id} PDF path to {s3_dest}.")
+
+    Path(pdf_path).unlink()
+    logging.info(f"Removed local file {pdf_path}.")
 
 
 @app.task(bind=True)
 def move_project_pdf_to_s3(self, *, project_slug, pdf_path, app_environment):
     """Temporary task to move project PDFs to S3."""
-    move_project_pdf_to_s3_inner(
-        project_slug=project_slug, pdf_path=pdf_path, app_environment=app_environment
-    )
+    with get_db_session(app_environment) as (session, query, config_obj):
+        move_project_pdf_to_s3_inner(
+            session=session,
+            config_obj=config_obj,
+            project_slug=project_slug,
+            pdf_path=pdf_path,
+        )

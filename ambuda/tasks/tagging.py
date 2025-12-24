@@ -15,12 +15,11 @@ from vidyut.lipi import transliterate, Scheme
 
 from ambuda import consts
 from ambuda import database as db
-from ambuda import queries as q
 from ambuda.tasks import app
+from ambuda.tasks.utils import get_db_session
 from ambuda.utils import revisions
 from ambuda.utils import dharmamitra as dm_utils
 from ambuda.utils.kosha import get_kosha
-from config import create_config_only_app
 
 
 # Dharmamitra rate limit is 100 sentences per minute
@@ -92,18 +91,16 @@ def _tag_block_inner(
         return {"status": "error", "reason": reason, "block_id": block_id}
 
     processor = DSP()
-    flask_app = create_config_only_app(app_env)
     limiter = get_rate_limiter()
-    with flask_app.app_context():
-        text = q.text(text_slug)
+    with get_db_session(app_env) as (session, query, config_obj):
+        text = query.text(text_slug)
         if not text:
             return _block_error(f"Text {text_slug} not found.")
 
-        bot_user = q.user(consts.BOT_USERNAME)
+        bot_user = query.user(consts.BOT_USERNAME)
         if not bot_user:
             return _block_error('Bot user "{consts.BOT_USERNAME}" not found')
 
-        session = q.get_session()
         block = session.execute(
             select(db.TextBlock).filter_by(id=block_id)
         ).scalar_one_or_none()
@@ -183,12 +180,11 @@ def tag_text(
     text_slug: str,
 ):
     """Process all blocks in a text with rate limiting."""
-    flask_app = create_config_only_app(app_env)
 
     # Load one instance, use in all tasks.
-    with flask_app.app_context():
+    with get_db_session(app_env) as (session, query, config_obj):
         kosha = get_kosha()
-        text = q.text(text_slug)
+        text = query.text(text_slug)
         if not text:
             return _error(f"Text {text_slug} not found")
 

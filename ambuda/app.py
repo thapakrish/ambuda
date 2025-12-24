@@ -1,4 +1,3 @@
-
 import logging
 import sys
 
@@ -169,4 +168,3 @@ def create_app(config_env: str):
 
     app.json_encoder = AmbudaJSONEncoder
     return app
-    

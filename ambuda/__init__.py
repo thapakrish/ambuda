@@ -13,4 +13,5 @@ load_dotenv(".env")
 
 def create_app(config_env: str):
     from ambuda.app import create_app
+
     return create_app(config_env)
