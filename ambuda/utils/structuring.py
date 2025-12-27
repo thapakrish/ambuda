@@ -9,6 +9,34 @@ from ambuda import database as db
 
 
 DEFAULT_PRINT_PAGE_NUMBER = "-"
+VALID_BLOCK_ELEMENTS = {
+    "p",
+    "verse",
+    "footnote",
+    "heading",
+    "trailer",
+    "title",
+    "subtitle",
+    "ignore",
+}
+
+
+def is_valid_page_xml(content: str) -> bool:
+    try:
+        root = DET.fromstring(content)
+    except ET.ParseError:
+        return False
+
+    # Root tag should always be "page"
+    if root.tag != "page":
+        return False
+
+    # Immediate children should be a known type (for dropdown support)
+    for child in root:
+        if child.tag not in VALID_BLOCK_ELEMENTS:
+            return False
+
+    return True
 
 
 def _inner_xml(el):

@@ -1,7 +1,6 @@
-{% extends 'proofing/base.html' %}
+{% extends 'header-main-footer.html' %}
 {% import "macros/proofing.html" as m %}
 {% import "macros/components.html" as mc %}
-{% import "proofing/pages/editor-components.html" as editor %}
 
 
 {# Render a radiobutton as a clickable button. #}
@@ -17,100 +16,440 @@
 {% endmacro %}
 
 
+{% macro _dropdown_item(fn, text) %}
+<li>
+  <button class="dropdown-item" @click.prevent="{{ fn }}">{{ text|safe }}</button>
+</li>
+{% endmacro %}
+
+
+{% macro _dropdown_separator() %}
+<li class="border-t border-slate-700 my-1"></li>
+{% endmacro %}
+
+
+{% macro _latin_char_row(chars, class) %}
+<div class="grid {{ class }}">
+{% for char in chars.split() %}
+  <button class="hover:bg-slate-700 rounded p-1">{{ char.upper()|safe }}</button>
+  <button class="hover:bg-slate-700 rounded p-1">{{ char|safe }}</button>
+{% endfor %}
+</div>
+{% endmacro %}
+
+
+{% macro _devanagari_char_row(chars, class) %}
+<div class="text-xl grid {{ class }}">
+{% for char in chars.split() %}
+  <button class="hover:bg-slate-100 rounded p-1">{{ char|safe }}</button>
+{% endfor %}
+</div>
+{% endmacro %}
+
+
 {% block title %}Edit: {{ project.display_title }}/{{ cur.slug }} | Ambuda{% endblock %}
 
 
+{% block header %}{% endblock %}
+{% block footer %}{% endblock %}
 {% block main %}
-<article class="p-4">
+<div class="h-screen flex flex-col overflow-hidden" x-data="proofer" @keydown.window="if (($event.metaKey || $event.ctrlKey) && $event.key === 'k') { $event.preventDefault(); openCommandPalette(); }">
+
+  {# Command menu: edit, view, tools, ... #}
+  {% set button_css = "block p-1 px-2 hover:bg-slate-700" %}
+  <nav class="bg-slate-900 text-white text-sm flex justify-between px-2">
+    {# Left-aligned (standard commands) #}
+    <div class="flex">
+    <div x-data="{open: false}" class="relative">
+      <button class="{{ button_css }}"
+         @click.prevent="open=!open"
+         @click.outside="open=false">{{ _('Edit') }}</button>
+      <div x-show="open" class="dropdown-pane w-48">
+        <ul class="text-sm" @click.prevent="open=false">
+          {{ _dropdown_item('undo', _('Undo')) }}
+          {{ _dropdown_item('redo', _('Redo')) }}
+          {{ _dropdown_separator() }}
+          {{ _dropdown_item('insertBlock', _('Insert block')) }}
+          {{ _dropdown_item('deleteBlock', _('Delete active block')) }}
+          {{ _dropdown_separator() }}
+          {{ _dropdown_item('markAsError', _('Mark as error')) }}
+          {{ _dropdown_item('markAsFix', _('Mark as fix')) }}
+          {{ _dropdown_item('markAsUnclear', _('Mark as unclear')) }}
+          {{ _dropdown_item('markAsFootnoteNumber', _('Mark as footnote number')) }}
+        </ul>
+      </div>
+    </div>
+
+    <div x-data="{open: false}" class="relative">
+      <button class="{{ button_css }}"
+         @click.prevent="open=!open"
+         @click.outside="open=false">{{ _('View') }}</button>
+      <div x-show="open" class="dropdown-pane w-48">
+        <ul class="text-sm" @click.prevent="open=false">
+          {{ _dropdown_item('displayImageOnLeft', _('Show image on left')) }}
+          {{ _dropdown_item('displayImageOnRight', _('Show image on right')) }}
+          {{ _dropdown_item('displayImageOnTop', _('Show image on top')) }}
+          {{ _dropdown_item('displayImageOnBottom', _('Show image on bottom')) }}
+          {{ _dropdown_separator() }}
+          {{ _dropdown_item('displayVisualView', _('Switch to visual editor')) }}
+          {{ _dropdown_item('displayXMLView', _('Switch to XML editor')) }}
+          {{ _dropdown_separator() }}
+          <li>
+            <button class="dropdown-item" @click.prevent="toggleAdvancedOptions">
+              <span x-show="!showAdvancedOptions">{{ _('Show advanced options') }}</span>
+              <span x-show="showAdvancedOptions">{{ _('Hide advanced options') }}</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div x-data="{open: false}" class="relative">
+      <button class="{{ button_css }}"
+         @click.prevent="open=!open"
+         @click.outside="open=false">{{ _('Tools') }}</button>
+      <div x-show="open" class="dropdown-pane w-64">
+        <ul class="text-sm" @click.prevent="open=false">
+          <li>
+            <button class="dropdown-item"
+                    @click.prevent="runOCR"
+                    :disabled="isRunningOCR"
+                    x-text="isRunningOCR ? '{{ _("Running OCR ...") }}' : '{{ _("Run OCR") }}'">
+            </button>
+          </li>
+          {% if current_user is defined and current_user.is_authenticated and current_user.is_p2 %}
+          <li>
+            <button class="dropdown-item"
+                    @click.prevent="runLLMStructuring"
+                    :disabled="isRunningLLMStructuring"
+                    x-text="isRunningLLMStructuring ? '{{ _("Running LLM Structuring ...") }}' : '{{ _("Run LLM Structuring") }}'">
+            </button>
+          </li>
+          {% endif %}
+          {{ _dropdown_item('replaceColonVisarga', _('Replace : (colon) with ः (visarga)')) }}
+          {{ _dropdown_item('replaceSAvagraha', _('Replace S with ऽ (avagraha)')) }}
+        </ul>
+      </div>
+    </div>
+
+    <div x-data="{open: false}" class="relative" @click.outside="open=false">
+      <button class="{{ button_css }}"
+         @click.prevent="open=!open">{{ _('Transliterator') }}</button>
+      <div x-show="open" class="dropdown-pane w-80 p-2">
+        {# i18n: source scheme when transliterating #}
+        <label class="block">{{ pgettext('editor', 'From:') }}</label>
+        <div class="mb-2 flex justify-between">
+          <select class="p-1 bg-slate-700" x-model="fromScript">
+            <option value="hk">Harvard-Kyoto ("aGka" &rarr; {{ 'aGka'|d }})</option>
+            <option value="itrans">ITRANS ("a~Nka" &rarr; {{ 'aGka'|d }})</option>
+            <option value="optitrans">OPTITRANS ("anka" &rarr; {{ 'aGka'|d }})</option>
+          </select>
+        </div>
+
+        {# i18n: destination scheme when transliterating #}
+        <label class="block">{{ pgettext('editor', 'To:') }}</label>
+        <div class="mb-2 flex justify-between">
+          <select class="p-1 bg-slate-700" x-model="toScript">
+            <option value="devanagari">{{ _('Devanagari') }}</option>
+            <option value="iast">{{ _('IAST') }}</option>
+          </select>
+        </div>
+
+        <button class="mt-4 btn btn-basic bg-slate-700 block w-full"
+            @click.prevent="transliterateSelectedText; open=false">
+            {# i18n: Command in proofing editor #}
+            {{ _('Transliterate selected text') }}
+        </button>
+      </div>
+    </div>
+
+    <div x-data="{open: false}" class="relative">
+      <button class="{{ button_css }}"
+         @click.prevent="open=!open"
+         {# i18n: Selection menu for Unicode character in proofing editor. #}
+         @click.outside="open=false">{{ pgettext('editor', 'Characters') }}</button>
+      <div x-show="open" class="p-2 dropdown-pane w-60" @click.prevent="copyCharacter">
+        <p class="text-xs text-center mb-2">{{ _('Click a character to copy it.') }}</p>
+        <ul class="text-center">
+          {{ _latin_char_row('ā á â à', 'grid-cols-8') }}
+          {{ _latin_char_row('ī í î ì', 'grid-cols-8') }}
+          {{ _latin_char_row('ū ú û ù', 'grid-cols-8') }}
+          {{ _latin_char_row('ṛ ṝ ḷ ḹ', 'grid-cols-8') }}
+          {{ _latin_char_row('ē é ê è', 'grid-cols-8') }}
+          {{ _latin_char_row('ō ó ô ò', 'grid-cols-8') }}
+          {{ _latin_char_row('ḥ ṁ ṃ', 'grid-cols-6') }}
+          {{ _latin_char_row('ṅ ñ ṇ', 'grid-cols-6') }}
+          {{ _latin_char_row('ṭ ḍ ś ṣ ç', 'grid-cols-10') }}
+          {{ _devanagari_char_row('&#x0964; &#x0965; &#x093d; &#x0970; &#xa8f2; &#xa8f3;',
+              'grid-cols-6') }}
+        </ul>
+      </div>
+    </div>
+
+    {% set history_url = url_for("proofing.page.history", project_slug=project.slug, page_slug=page_context.cur.slug) %}
+    <button class="{{ button_css }}" @click.prevent="openHistoryModal">{{ _('History') }}</button>
+    </div>
+
+    {# Right-aligned (username, sign in) #}
+    <div>
+      {% if current_user.is_authenticated %}
+      {% set name = current_user.username %}
+      <div x-data="{open: false}" class="relative" @click.outside="open=false">
+        <button class="{{ button_css }}" @click.prevent="open=!open">{{ name }}</button>
+        <div x-show="open" class="dropdown-pane w-60 right-0">
+          <a href="{{ url_for("proofing.user.summary", username=name) }}" class="dropdown-item">
+            {{ _('Profile') }}
+          </a>
+          <a href="{{ url_for("auth.sign_out") }}" class="dropdown-item">
+            {{ _('Sign out') }}
+          </a>
+        </div>
+      </div>
+      {% else %}
+        <a href="{{ url_for("auth.sign_in") }}" class="{{ button_css }}">{{ _('Sign in') }}</a>
+      {% endif %}
+    </div>
+  </nav>
+
+  {# Unified menu bar: project info, image controls, text controls #}
+  <div class="flex-shrink-0 bg-slate-300 border-b text-sky-900 text-sm">
+    <div class="flex items-center justify-between p-2 gap-4">
+      {# Left side: Project info and page status #}
+      <div class="flex-shrink-0">
+        <div class="mb-1">
+          <a class="block font-bold hover:underline" href="{{ url_for("proofing.project.summary", slug=project.slug) }}">
+            {{ project.display_title }}
+          </a>
+          <div class="text-slate-600 text-xs">Page {{ image_number }} of {{ page_context.num_pages }}</div>
+        </div>
+      </div>
+
+      {# Middle panel: image and text controls #}
+      <div class="flex items-center gap-3 flex-1">
+        <div class="flex items-center gap-2">
+          {% set status = page_context.cur.status.name %}
+          {% if status == 'reviewed-0' %}
+          <span class="p-1 rounded text-xs {{ m.revision_colors(status) }}">{{ _('Needs work') }}</span>
+          {% elif status == 'reviewed-1' %}
+          <span class="p-1 rounded text-xs {{ m.revision_colors(status) }}">{{ _('Proofed once') }}</span>
+          {% elif status == 'reviewed-2' %}
+          <span class="p-1 rounded text-xs {{ m.revision_colors(status) }}">{{ _('Proofed twice') }}</span>
+          {% elif status == 'skip' %}
+          <span class="p-1 rounded text-xs {{ m.revision_colors(status) }}">{{ _('Not relevant') }}</span>
+          {% endif %}
+        </div>
+
+        <div class="border border-slate-300 rounded-full px-3 py-1 bg-slate-50">
+          <div class="flex items-center gap-1">
+            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="increaseImageZoom" title="Zoom in">&#x1f50d;<sup>+</sup></button>
+            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="resetImageZoom" title="Reset zoom">&#x1f50d;&#x00b0;</button>
+            <button type="button" class="p-1 hover:bg-slate-200 rounded" @click="decreaseImageZoom" title="Zoom out">&#x1f50d;<sup>-</sup></button>
+            <button type="button" id="osd-rotate-left" class="p-1 hover:bg-slate-200 rounded" title="Rotate left">&#x27f2;</button>
+            <button type="button" id="osd-rotate-right" class="p-1 hover:bg-slate-200 rounded" title="Rotate right">&#x27f3;</button>
+          </div>
+        </div>
+      </div>
+
+      {# Right side: Navigation and auth #}
+      <div class="flex items-center space-x-4 flex-shrink-0">
+        <div>
+          {% set prev_url = url_for('proofing.page.edit', project_slug=project.slug, page_slug=page_context.prev.slug) %}
+          {% set next_url = url_for('proofing.page.edit', project_slug=project.slug, page_slug=page_context.next.slug) %}
+          <a class="p-2 rounded hover:bg-slate-400" href="{{ prev_url }}">&larr;</a>
+          <a class="p-2 rounded hover:bg-slate-400" href="{{ next_url }}">&rarr;</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
   {% if not current_user.is_authenticated -%}
   {% set url = url_for('auth.register') %}
-  {% call mc.p_warning() %}{% trans %}
-  Since you are not logged in, some functions (such as the OCR button) have
-  been disabled. To use all website features, please <a class="underline"
-  href="{{ url }}">create an account</a>.
-  {% endtrans %}{% endcall %}
+  <div class="px-4 py-2 bg-yellow-100 border-b">
+    {% trans %}
+    Since you are not logged in, some functions (such as the OCR button) have
+    been disabled. To use all website features, please <a class="underline"
+    href="{{ url }}">create an account</a>.
+    {% endtrans %}
+  </div>
   {%- endif %}
 
-  {% set num_images = project.pages|length %}
-  {{ editor.navigation_bar(page_context, page_number, image_number, num_images) }}
   {{ mc.flash_messages() }}
 
   {% if conflict %}
-  <pre class="p-2 bg-slate-100 my-4">{{ conflict.content }}</pre>
+  <div class="px-4 py-2 bg-slate-100 border-b">
+    <pre class="p-2">{{ conflict.content }}</pre>
+  </div>
   {% endif %}
 
-  <form x-data="proofer" method="POST">
+  {% if not has_edits %}
+    {# i18n: This should match the "Tools" and "Run OCR" translations in the proofing tool. #}
+    {% set command = _("Tools &rarr; Run OCR") %}
+    <div class="px-4 py-2 bg-blue-100 border-b text-xs">
+      {% trans %}
+      This page has not been edited yet. Run <i>{{ command }}</i> to get started.
+      {% endtrans %}
+    </div>
+  {% endif %}
+
+  <div x-show="isRunningOCR || isRunningLLMStructuring || isRunningStructuring"
+       class="bg-blue-100 border-b text-blue-700 px-4 py-2 text-sm"
+       role="alert">
+    <span x-show="isRunningOCR">{{ _('Running OCR ...') }}</span>
+    <span x-show="isRunningLLMStructuring">{{ _('Running LLM structuring ...') }}</span>
+    <span x-show="isRunningStructuring">{{ _('Running structuring ...') }}</span>
+  </div>
+
+  <div x-show="xmlParseError"
+       class="bg-red-100 border-b text-red-700 px-4 py-2 text-sm flex justify-between items-center"
+       role="alert">
+    <span x-text="xmlParseError"></span>
+    <button type="button"
+            class="text-red-700 hover:text-red-900 font-bold ml-4"
+            @click="xmlParseError = null">&times;</button>
+  </div>
+
+  <form method="POST" class="flex-1 flex flex-col min-h-0" @submit.prevent="submitForm">
     {{ form.csrf_token }}
     {{ form.version }}
 
-    {% if not has_edits %}
-      {# i18n: This should match the "Tools" and "Run OCR" translations in the proofing tool. #}
-      {% set command = _("Tools &rarr; Run OCR") %}
-      {% call mc.p_note() %}{% trans %}
-      This page has not been edited yet. Run <i>{{ command }}</i> to get started.
-      {% endtrans %}{% endcall %}
-    {% endif %}
-
-    {{ editor.menu_bar() }}
-
-    <div x-show="isRunningOCR || isRunningLLMStructuring || isRunningStructuring"
-         class="bg-blue-100 border border-blue-400 text-blue-700 p-2 text-sm rounded my-2"
-         role="alert">
-      <span x-show="isRunningOCR">{{ _('Running OCR ...') }}</span>
-      <span x-show="isRunningLLMStructuring">{{ _('Running LLM structuring ...') }}</span>
-      <span x-show="isRunningStructuring">{{ _('Running structuring ...') }}</span>
-    </div>
-
-    <div :class="layoutClasses">
-      {{ editor.text_box(form.content.data or "") }}
-      {{ editor.image_box() }}
-    </div>
-
-    <div class="my-8 p-4 border bg-slate-200 rounded">
-      {{ form.summary.label(class_="text-slate-600 mb-2 block") }}
-      {{ form.summary(class_="block rounded bg-white w-full mb-4 p-2",
-          placeholder=_("Fixed various OCR errors")) }}
-
-      {{ form.status.label(class_="block") }}
-      {% set radios = form.status|list %}
-      <div class="flex my-4">
-        {{ _status(radios[0],
-        "peer-checked:bg-red-200 peer-checked:text-red-800 peer-checked:border-red-300") }}
-        {{ _status(radios[1],
-        "peer-checked:bg-yellow-200 peer-checked:text-yellow-800 peer-checked:border-yellow-300") }}
-        {% if not is_r0 %}
-        {{ _status(radios[2],
-        "peer-checked:bg-green-200 peer-checked:text-green-800 peer-checked:border-green-300") }}
-        {% endif %}
-        {{ _status(radios[3],
-        "peer-checked:bg-slate-100 peer-checked:text-gray-800 peer-checked:border-gray-300") }}
+    <div :class="layoutClasses" class="flex-1 min-h-0">
+      <div class="flex-1 flex flex-col min-h-0">
+        <div class="border border-r-slate-400 flex flex-col min-h-0 h-full">
+          <div class="p-2 md:p-4 flex-1 min-h-0 overflow-y-scroll">
+            <div id="prosemirror-editor" class="prosemirror-editor" :style="`font-size: ${textZoom}rem`"></div>
+            <textarea id="content" name="content" required="" style="display: none;">{{ form.content.data }}</textarea>
+          </div>
+        </div>
       </div>
+      <div class="flex-1 flex flex-col min-h-0">
+        <div class="flex flex-col min-h-0 h-full border bg-slate-100">
+          <div id="osd-image" class="flex-1 min-h-0">
+          </div>
+        </div>
+      </div>
+    </div>
 
-      {% if current_user.is_authenticated %}
-      {% set cc0 = "https://creativecommons.org/publicdomain/zero/1.0/" %}
-      <p class="my-4 text-sm">{% trans %}
-      By saving your changes, you agree to release your contribution under the
-      <a class="underline" href="{{ cc0 }}">CC0 (public domain) license</a>.
-      {% endtrans %}</p>
+    <div class="flex-shrink-0 bg-slate-200 border-t p-4">
+      <div class="max-w-6xl mx-auto">
+        <div class="flex gap-4 items-end">
+          <div class="flex-1">
+            {{ form.summary.label(class_="text-slate-600 mb-1 block text-sm") }}
+            {{ form.summary(class_="block rounded bg-white w-full p-2",
+                placeholder=_("Fixed various OCR errors")) }}
+          </div>
 
-      <input class="btn btn-submit"
-             type="submit"
-             value="{{ _('Publish changes') }}"
-             @click="hasUnsavedChanges = false">
-      {% endif %}
+          <div class="flex-1" x-data="{
+            statusValue: '{{ form.status.data }}',
+            getStatusClasses() {
+              const classes = {
+                'reviewed-0': 'bg-red-200 text-red-800 border-red-300',
+                'reviewed-1': 'bg-yellow-200 text-yellow-800 border-yellow-300',
+                'reviewed-2': 'bg-green-200 text-green-800 border-green-300',
+                'skip': 'bg-slate-100 text-gray-800 border-gray-300'
+              };
+              return classes[this.statusValue] || 'bg-white text-slate-700 border-slate-300';
+            }
+          }">
+            {{ form.status.label(class_="block text-slate-600 mb-1 text-sm") }}
+            <select name="status"
+                    x-model="statusValue"
+                    :class="getStatusClasses()"
+                    class="block w-full p-2 rounded border-2 transition-colors">
+              {% set radios = form.status|list %}
+              <option value="{{ radios[0].data }}">{{ radios[0].label.text }}</option>
+              <option value="{{ radios[1].data }}">{{ radios[1].label.text }}</option>
+              {% if not is_r0 %}
+              <option value="{{ radios[2].data }}">{{ radios[2].label.text }}</option>
+              {% endif %}
+              <option value="{{ radios[3].data }}">{{ radios[3].label.text }}</option>
+            </select>
+          </div>
+
+          {% if current_user.is_authenticated %}
+          <div>
+            <button class="btn btn-submit"
+                   type="submit"
+                   @click="hasUnsavedChanges = false">
+              {{ _('Save changes') }}
+            </button>
+          </div>
+          {% endif %}
+        </div>
+
+        {% if current_user.is_authenticated %}
+        {% set cc0 = "https://creativecommons.org/publicdomain/zero/1.0/" %}
+        <p class="mt-2 text-xs text-slate-600">{% trans %}
+        By saving your changes, you agree to release your contribution under the
+        <a class="underline" href="{{ cc0 }}">CC0 (public domain) license</a>.
+        {% endtrans %}</p>
+        {% else %}
+        {% set create = url_for("auth.register") %}
+        {% set log_in = url_for("auth.sign_in") %}
+        <p class="mt-2 text-xs text-slate-600">
+        Only registered users can save changes. <a class="underline" href="{{ create }}">Create an
+            account</a> or <a class="underline" href="{{ log_in }}">sign in</a> to save your
+        changes.
+        </p>
+        {% endif %}
+      </div>
     </div>
   </form>
 
-  {% if not current_user.is_authenticated %}
-  {% set create = url_for("auth.register") %}
-  {% set log_in = url_for("auth.sign_in") %}
-  {% call mc.p_warning() %}
-  Only registered users can save changes. <a href="{{ create }}">Create an
-      account</a> or <a href="{{ log_in }}">sign in</a> to save your
-  changes.
-  {% endcall %}
-  {% endif %}
-</article>
+  <div x-show="commandPaletteOpen"
+       x-cloak
+       @click.self="closeCommandPalette"
+       class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center pt-20 z-50">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden text-sm">
+      <input id="command-palette-input"
+             type="text"
+             :value="commandPaletteQuery"
+             @input="updateCommandPaletteQuery($event.target.value)"
+             @keydown="handleCommandPaletteKeydown"
+             placeholder="Search commands ..."
+             class="w-full p-3 focus:outline-none">
+      <div class="max-h-96 overflow-y-scroll">
+        <template x-for="(cmd, index) in getFilteredCommands()" :key="index">
+          <button type="button"
+                  @click="executeCommand(index)"
+                  :class="index === commandPaletteSelected ? 'bg-blue-100' : 'hover:bg-slate-50'"
+                  class="block w-full text-left p-3"
+                  x-text="cmd.label">
+          </button>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <div x-show="historyModalOpen"
+       x-cloak
+       @click.self="closeHistoryModal"
+       class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center pt-20 z-50">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden">
+      <div class="bg-slate-100 p-4 border-b flex justify-between items-center">
+        <h2 class="text-lg font-bold">{{ _('Revision history') }}</h2>
+        <button type="button"
+                class="text-slate-700 hover:text-slate-900 font-bold text-xl"
+                @click="closeHistoryModal">&times;</button>
+      </div>
+      <div class="p-4 max-h-96 overflow-y-scroll">
+        <div x-show="historyLoading" class="text-center py-4">{{ _('Loading...') }}</div>
+        <div x-show="!historyLoading && historyRevisions.length === 0" class="text-center py-4 text-slate-500">
+          {{ _('There are no revisions for this page.') }}
+        </div>
+        <ul x-show="!historyLoading && historyRevisions.length > 0" class="a-hover-underline">
+          <template x-for="r in historyRevisions" :key="r.id">
+            <li class="my-2 text-sm">
+              <span :class="getRevisionColorClass(r.status)" class="inline-block w-2 h-2 mr-0.5 rounded-full"></span>
+              <a :href="r.revision_url" class="text-slate-400" x-text="r.created"></a>
+              by <a :href="r.author_url" x-text="r.author"></a>
+              <i x-show="r.summary" x-text="'(' + r.summary + ')'"></i>
+            </li>
+          </template>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/openseadragon@3.1/build/openseadragon/openseadragon.min.js"></script>
 {% set image_url = url_for("site.page_image", project_slug=project.slug, page_slug=cur.slug) %}

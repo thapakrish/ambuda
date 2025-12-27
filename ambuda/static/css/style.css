@@ -47,11 +47,11 @@
 
   /* Dropdowns (e.g. in proofing editor) */
   .dropdown-pane {
-    @apply z-50 bg-white border absolute a-hover-underline;
+    @apply z-50 bg-slate-900 text-white border border-slate-700 absolute a-hover-underline;
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
   }
   .dropdown-item {
-    @apply block w-full text-left p-2 hover:bg-slate-100;
+    @apply block w-full text-left px-2 py-1 hover:bg-sky-500;
   }
 
   /* Sidebar */
@@ -157,6 +157,53 @@
 
   .pm-html-tag-error {
     @apply text-xs p-0.5 rounded bg-red-600 text-white rounded;
+  }
+
+  /* Visual editor inline marks */
+  .pm-error, .pm-fix, .pm-flag {
+    @apply border-b-2 pr-1;
+  }
+
+  .pm-error {
+    @apply bg-red-100 text-red-800 border-red-500;
+  }
+
+  .pm-error:before {
+    content: "⛔ ";
+    @apply text-xs pl-1;
+  }
+
+  .pm-fix {
+    @apply bg-green-100 text-green-800 border-green-500;
+  }
+
+  .pm-fix:before {
+    content: "✅ ";
+    @apply text-xs pl-1;
+  }
+
+  .pm-flag {
+    @apply bg-yellow-100 text-yellow-800 border-yellow-500;
+  }
+
+  .pm-flag:before {
+    content: "? ";
+    @apply text-xs pl-1;
+  }
+
+  .pm-ref {
+    @apply bg-slate-200 rounded pr-1 text-xs;
+  }
+
+  .pm-ref:before {
+    content: "ref: ";
+    @apply text-xs pl-1;
+  }
+
+  /* XML editor */
+  .xml-code {
+    @apply m-0 p-0 whitespace-pre-wrap break-words;
+    font-family: inherit;
   }
 }
 

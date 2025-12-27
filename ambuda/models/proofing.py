@@ -6,7 +6,7 @@ from datetime import datetime, UTC
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, event
 from sqlalchemy import Text as Text_
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 from ambuda.models.base import Base, foreign_key, pk, same_as
 
@@ -68,7 +68,7 @@ class Project(Base):
     #: Primary key.
     id = pk()
     #: Human-readable ID, which we display in the URL.
-    slug = Column(String, unique=True, nullable=False)
+    slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     #: UUID (for s3 uploads, stability despite slug renames, etc.)
     uuid = Column(String, unique=True, nullable=False, default=_create_uuid)
 
@@ -148,7 +148,7 @@ class Page(Base):
     #: The project that owns this page.
     project_id = foreign_key("proof_projects.id")
     #: Human-readable ID, which we display in the URL.
-    slug = Column(String, index=True, nullable=False)
+    slug: Mapped[str] = mapped_column(String, index=True, nullable=False)
     #: (internal-only) A comes before B iff A.order < B.order.
     order = Column(Integer, nullable=False)
     #: (internal-only) used only so that we can implement optimistic locking
@@ -194,7 +194,7 @@ class PageStatus(Base):
     #: Primary key.
     id = pk()
     #: A short human-readable label for this status.
-    name = Column(String, nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
 
     def __str__(self) -> str:
         return self.name

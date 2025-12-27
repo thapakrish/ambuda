@@ -5,13 +5,22 @@ The main route here is `edit`, which defines the page editor and the edit flow.
 
 from dataclasses import dataclass
 
-from flask import Blueprint, current_app, flash, render_template, request, send_file
+from flask import (
+    Blueprint,
+    current_app,
+    flash,
+    jsonify,
+    render_template,
+    request,
+    send_file,
+    url_for,
+)
 from flask_babel import lazy_gettext as _l
 from flask_login import current_user, login_required
 from flask_wtf import FlaskForm
 from werkzeug.exceptions import abort
 from wtforms import HiddenField, RadioField, StringField
-from wtforms.validators import DataRequired
+from wtforms.validators import DataRequired, ValidationError
 from wtforms.widgets import TextArea
 
 from ambuda import database as db
@@ -21,11 +30,16 @@ from ambuda.utils import google_ocr, llm_structuring, project_utils, structuring
 from ambuda.utils.assets import get_page_image_filepath
 from ambuda.utils.diff import revision_diff
 from ambuda.utils.revisions import EditError, add_revision
-from ambuda.utils.structuring import ProofPage
+from ambuda.utils.structuring import ProofPage, is_valid_page_xml
 from ambuda.views.api import bp as api
 from ambuda.views.site import bp as site
 
 bp = Blueprint("page", __name__)
+
+
+def validate_page_xml(form, field):
+    if not is_valid_page_xml(field.data):
+        raise ValidationError("Invalid page XML structure")
 
 
 @dataclass
@@ -40,6 +54,8 @@ class PageContext:
     prev: db.Page | None
     #: The page after `cur`, if it exists.
     next: db.Page | None
+    #: The number of pages in this project.
+    num_pages: int
 
 
 class EditPageForm(FlaskForm):
@@ -50,13 +66,15 @@ class EditPageForm(FlaskForm):
     version = HiddenField(_l("Page version"))
     #: The page content.
     content = StringField(
-        _l("Page content"), widget=TextArea(), validators=[DataRequired()]
+        _l("Page content"),
+        widget=TextArea(),
+        validators=[DataRequired(), validate_page_xml],
     )
     #: The page status.
     status = RadioField(
         _l("Status"),
         choices=[
-            (SitePageStatus.R0.value, _l("Needs more work")),
+            (SitePageStatus.R0.value, _l("Needs work")),
             (SitePageStatus.R1.value, _l("Proofed once")),
             (SitePageStatus.R2.value, _l("Proofed twice")),
             (SitePageStatus.SKIP.value, _l("Not relevant")),
@@ -89,7 +107,9 @@ def _get_page_context(project_slug: str, page_slug: str) -> PageContext | None:
     prev = pages[i - 1] if i > 0 else None
     cur = pages[i]
     next = pages[i + 1] if i < len(pages) - 1 else None
-    return PageContext(project=project_, cur=cur, prev=prev, next=next)
+    return PageContext(
+        project=project_, cur=cur, prev=prev, next=next, num_pages=len(pages)
+    )
 
 
 def _get_page_number(project_: db.Project, page_: db.Page) -> str:
@@ -117,6 +137,7 @@ def edit(project_slug, page_slug):
     ctx = _get_page_context(project_slug, page_slug)
     if ctx is None:
         abort(404)
+    assert ctx
 
     cur = ctx.cur
     form = EditPageForm()
@@ -129,7 +150,9 @@ def edit(project_slug, page_slug):
     has_edits = bool(cur.revisions)
     if has_edits:
         latest_revision = cur.revisions[-1]
-        form.content.data = latest_revision.content
+        form.content.data = ProofPage.from_content_and_page_id(
+            latest_revision.content, ctx.cur.id
+        ).to_xml_string()
 
     is_r0 = cur.status.name == SitePageStatus.R0
     image_number = cur.slug
@@ -160,28 +183,38 @@ def edit_post(project_slug, page_slug):
     ctx = _get_page_context(project_slug, page_slug)
     if ctx is None:
         abort(404)
+    assert ctx
 
     cur = ctx.cur
     form = EditPageForm()
     conflict = None
 
     if form.validate_on_submit():
+        # `new_content` is already validated through EditPageForm.
+        new_content = form.content.data
+        old_content = ctx.cur.revisions[-1].content
+        has_changed = old_content != new_content
         try:
-            new_version = add_revision(
-                cur,
-                summary=form.summary.data,
-                content=form.content.data,
-                status=form.status.data,
-                version=int(form.version.data),
-                author_id=current_user.id,
-            )
-            form.version.data = new_version
-            flash("Saved changes.", "success")
+            if has_changed:
+                new_version = add_revision(
+                    cur,
+                    summary=form.summary.data,
+                    content=form.content.data,
+                    status=form.status.data,
+                    version=int(form.version.data),
+                    author_id=current_user.id,
+                )
+                form.version.data = new_version
+                flash("Saved changes.", "success")
+            else:
+                flash("Skipped save. (No changes made.)", "success")
         except EditError:
             # FIXME: in the future, use a proper edit conflict view.
             flash("Edit conflict. Please incorporate the changes below:")
             conflict = cur.revisions[-1]
             form.version.data = cur.version
+    else:
+        flash("Sorry, your changes have one or more errors.", "error")
 
     is_r0 = cur.status.name == SitePageStatus.R0
     image_number = cur.slug
@@ -222,6 +255,7 @@ def history(project_slug, page_slug):
     if ctx is None:
         abort(404)
 
+    assert ctx
     return render_template(
         "proofing/pages/history.html",
         project=ctx.project,
@@ -238,6 +272,7 @@ def revision(project_slug, page_slug, revision_id):
     if ctx is None:
         abort(404)
 
+    assert ctx
     cur = ctx.cur
     prev_revision = None
     cur_revision = None
@@ -271,19 +306,25 @@ def revision(project_slug, page_slug, revision_id):
 # frontend, which just concatenate the window URL onto "/api/ocr".
 @api.route("/ocr/<project_slug>/<page_slug>/")
 @login_required
-def ocr(project_slug, page_slug):
+def ocr_api(project_slug, page_slug):
     """Apply Google OCR to the given page."""
     project_ = q.project(project_slug)
     if project_ is None:
         abort(404)
+    assert project_
 
     page_ = q.page(project_.id, page_slug)
     if not page_:
         abort(404)
+    assert page_
 
     image_path = get_page_image_filepath(project_slug, page_slug)
     ocr_response = google_ocr.run(image_path)
-    return ocr_response.text_content
+    ocr_text = ocr_response.text_content
+
+    structured_data = ProofPage.from_content_and_page_id(ocr_text, page_.id)
+    ret = structured_data.to_xml_string()
+    return ret
 
 
 @api.route("/llm-structuring/<project_slug>/<page_slug>/")
@@ -292,10 +333,12 @@ def llm_structuring_api(project_slug, page_slug):
     project_ = q.project(project_slug)
     if project_ is None:
         abort(404)
+    assert project_
 
     page_ = q.page(project_.id, page_slug)
     if not page_:
         abort(404)
+    assert page_
 
     content = request.json.get("content", "")
     if not content:
@@ -313,25 +356,33 @@ def llm_structuring_api(project_slug, page_slug):
         return f"Error: {str(e)}", 500
 
 
-@api.route("/structuring/<project_slug>/<page_slug>/", methods=["POST"])
-@login_required
-def structuring_api(project_slug, page_slug):
-    """Heuristic structuring API (fast, ~free)."""
-    project_ = q.project(project_slug)
-    if project_ is None:
+@api.route("/proofing/<project_slug>/<page_slug>/history")
+def page_history_api(project_slug, page_slug):
+    ctx = _get_page_context(project_slug, page_slug)
+    if ctx is None:
         abort(404)
 
-    page_ = q.page(project_.id, page_slug)
-    if not page_:
-        abort(404)
+    assert ctx
+    revisions = []
+    for r in reversed(ctx.cur.revisions):
+        revisions.append(
+            {
+                "id": r.id,
+                "created": r.created.strftime("%Y-%m-%d %H:%M"),
+                "author": r.author.username,
+                "summary": r.summary or "",
+                "status": r.status.name,
+                "revision_url": url_for(
+                    "proofing.page.revision",
+                    project_slug=project_slug,
+                    page_slug=page_slug,
+                    revision_id=r.id,
+                    _external=True,
+                ),
+                "author_url": url_for(
+                    "proofing.user.summary", username=r.author.username, _external=True
+                ),
+            }
+        )
 
-    content = request.json.get("content", "")
-    if not content:
-        return "Error: No content provided", 400
-
-    try:
-        structured_data = ProofPage.from_content_and_page_id(content, page_.id)
-        return structured_data.to_xml_string()
-    except Exception as e:
-        current_app.logger.error(f"Structuring failed: {e}")
-        return f"Error: {str(e)}", 500
+    return jsonify({"revisions": revisions})

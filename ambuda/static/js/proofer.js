@@ -2,16 +2,23 @@
 /* Transcription and proofreading interface. */
 
 import { $ } from './core.ts';
-import { ProofingEditor } from './prosemirror-editor.ts';
+import ProofingEditor, { XMLView } from './prosemirror-editor.ts';
 
 const CONFIG_KEY = 'proofing-editor';
 
-const LAYOUT_SIDE_BY_SIDE = 'side-by-side';
-const LAYOUT_TOP_AND_BOTTOM = 'top-and-bottom';
-const ALL_LAYOUTS = [LAYOUT_SIDE_BY_SIDE, LAYOUT_TOP_AND_BOTTOM];
+const LAYOUT_IMAGE_LEFT = 'image-left';
+const LAYOUT_IMAGE_RIGHT = 'image-right';
+const LAYOUT_IMAGE_TOP = 'image-top';
+const LAYOUT_IMAGE_BOTTOM = 'image-bottom';
+const ALL_LAYOUTS = [LAYOUT_IMAGE_LEFT, LAYOUT_IMAGE_RIGHT, LAYOUT_IMAGE_TOP, LAYOUT_IMAGE_BOTTOM];
 
-const CLASSES_SIDE_BY_SIDE = 'flex flex-col-reverse md:flex-row h-[90vh]';
-const CLASSES_TOP_AND_BOTTOM = 'flex flex-col-reverse h-[90vh]';
+const CLASSES_IMAGE_LEFT = 'flex flex-row-reverse h-[90vh]';
+const CLASSES_IMAGE_RIGHT = 'flex flex-row h-[90vh]';
+const CLASSES_IMAGE_TOP = 'flex flex-col-reverse h-[90vh]';
+const CLASSES_IMAGE_BOTTOM = 'flex flex-col h-[90vh]';
+
+const VIEW_VISUAL = 'visual';
+const VIEW_XML = 'xml';
 
 /* Initialize our image viewer. */
 function initializeImageViewer(imageURL) {
@@ -49,33 +56,55 @@ export default () => ({
   // Settings
   textZoom: 1,
   imageZoom: null,
-  layout: 'side-by-side',
+  layout: 'image-right',
+  viewMode: VIEW_VISUAL,
   // [transliteration] the source script
   fromScript: 'hk',
   // [transliteration] the destination script
   toScript: 'devanagari',
+  // If true, show advanced options (text, n, and merge_next)
+  showAdvancedOptions: false,
 
   // Internal-only
-  layoutClasses: CLASSES_SIDE_BY_SIDE,
+  layoutClasses: CLASSES_IMAGE_RIGHT,
   isRunningOCR: false,
   isRunningLLMStructuring: false,
   isRunningStructuring: false,
   hasUnsavedChanges: false,
+  xmlParseError: null,
   imageViewer: null,
   editor: null,
+  commandPaletteOpen: false,
+  commandPaletteQuery: '',
+  commandPaletteSelected: 0,
+  historyModalOpen: false,
+  historyLoading: false,
+  historyRevisions: [],
 
   init() {
     this.loadSettings();
     this.layoutClasses = this.getLayoutClasses();
 
-    // Initialize Prosemirror
+    // Initialize editor (either ProofingEditor or XMLView based on viewMode)
     const editorElement = $('#prosemirror-editor');
     const initialContent = $('#content').value || '';
-    this.editor = new ProofingEditor(editorElement, initialContent, () => {
-      this.hasUnsavedChanges = true;
-      $('#content').value = this.editor.getText();
-    });
 
+    // NOTE: always use Alpine.raw() to access the editor because Alpine reactivity/proxies breaks
+    // the underlying data model and causes bizarre errors, e.g.:
+    //
+    // https://discuss.prosemirror.net/t/getting-rangeerror-applying-a-mismatched-transaction-even-with-trivial-code/4948/3
+    if (this.viewMode === VIEW_XML) {
+      this.editor = new XMLView(editorElement, initialContent, () => {
+        this.hasUnsavedChanges = true;
+        $('#content').value = Alpine.raw(this.editor).getText();
+      });
+    } else {
+      this.editor = new ProofingEditor(editorElement, initialContent, () => {
+        this.hasUnsavedChanges = true;
+        $('#content').value = Alpine.raw(this.editor).getText();
+      }, this.showAdvancedOptions);
+    }
+    
     // Set `imageZoom` only after the viewer is fully initialized.
     this.imageViewer = initializeImageViewer(IMAGE_URL);
     this.imageViewer.addHandler('open', () => {
@@ -86,6 +115,79 @@ export default () => ({
     // Use `.bind(this)` so that `this` in the function refers to this app and
     // not `window`.
     window.onbeforeunload = this.onBeforeUnload.bind(this);
+  },
+
+  getCommands() {
+    return [
+      { label: 'Edit > Undo', action: () => this.undo() },
+      { label: 'Edit > Redo', action: () => this.redo() },
+      { label: 'Edit > Insert block', action: () => this.insertBlock() },
+      { label: 'Edit > Delete active block', action: () => this.deleteBlock() },
+      { label: 'Edit > Mark as error', action: () => this.markAsError() },
+      { label: 'Edit > Mark as fix', action: () => this.markAsFix() },
+      { label: 'Edit > Mark as unclear', action: () => this.markAsUnclear() },
+      { label: 'Edit > Mark as footnote number', action: () => this.markAsFootnoteNumber() },
+      { label: 'View > Show image on left', action: () => this.displayImageOnLeft() },
+      { label: 'View > Show image on right', action: () => this.displayImageOnRight() },
+      { label: 'View > Show image on top', action: () => this.displayImageOnTop() },
+      { label: 'View > Show image on bottom', action: () => this.displayImageOnBottom() },
+    ];
+  },
+
+  getFilteredCommands() {
+    const query = this.commandPaletteQuery.toLowerCase();
+    if (!query) return this.getCommands();
+    return this.getCommands().filter(cmd =>
+      cmd.label.toLowerCase().includes(query)
+    );
+  },
+
+  openCommandPalette() {
+    this.commandPaletteOpen = true;
+    this.commandPaletteQuery = '';
+    this.commandPaletteSelected = 0;
+    this.$nextTick(() => {
+      const input = document.querySelector('#command-palette-input');
+      if (input) input.focus();
+    });
+  },
+
+  closeCommandPalette() {
+    this.commandPaletteOpen = false;
+  },
+
+  handleCommandPaletteKeydown(e) {
+    const filtered = this.getFilteredCommands();
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      this.commandPaletteSelected = Math.min(this.commandPaletteSelected + 1, filtered.length - 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      this.commandPaletteSelected = Math.max(this.commandPaletteSelected - 1, 0);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      this.executeSelectedCommand();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      this.closeCommandPalette();
+    }
+  },
+
+  executeCommand(index) {
+    const filtered = this.getFilteredCommands();
+    if (filtered[index]) {
+      filtered[index].action();
+      this.closeCommandPalette();
+    }
+  },
+
+  executeSelectedCommand() {
+    this.executeCommand(this.commandPaletteSelected);
+  },
+
+  updateCommandPaletteQuery(query) {
+    this.commandPaletteQuery = query;
+    this.commandPaletteSelected = 0;
   },
 
   // Settings IO
@@ -100,9 +202,11 @@ export default () => ({
         // initialized. See `init` for details.
         this.imageZoom = settings.imageZoom;
         this.layout = settings.layout || this.layout;
+        this.viewMode = settings.viewMode || this.viewMode;
 
         this.fromScript = settings.fromScript || this.fromScript;
         this.toScript = settings.toScript || this.toScript;
+        this.showAdvancedOptions = settings.showAdvancedOptions || this.showAdvancedOptions;
       } catch (error) {
         // Old settings are invalid -- rewrite with valid values.
         this.saveSettings();
@@ -115,17 +219,23 @@ export default () => ({
       textZoom: this.textZoom,
       imageZoom: this.imageZoom,
       layout: this.layout,
+      viewMode: this.viewMode,
       fromScript: this.fromScript,
       toScript: this.toScript,
+      showAdvancedOptions: this.showAdvancedOptions,
     };
     localStorage.setItem(CONFIG_KEY, JSON.stringify(settings));
   },
 
   getLayoutClasses() {
-    if (this.layout === LAYOUT_TOP_AND_BOTTOM) {
-      return CLASSES_TOP_AND_BOTTOM;
+    if (this.layout === LAYOUT_IMAGE_LEFT) {
+      return CLASSES_IMAGE_LEFT;
+    } else if (this.layout === LAYOUT_IMAGE_TOP) {
+      return CLASSES_IMAGE_TOP;
+    } else if (this.layout === LAYOUT_IMAGE_BOTTOM) {
+      return CLASSES_IMAGE_BOTTOM;
     }
-    return CLASSES_SIDE_BY_SIDE;
+    return CLASSES_IMAGE_RIGHT;
   },
 
   // Callbacks
@@ -155,7 +265,7 @@ export default () => ({
         }
         return '(server error)';
       });
-    this.editor.setText(content);
+    Alpine.raw(this.editor).setText(content);
     $('#content').value = content;
 
     this.isRunningOCR = false;
@@ -167,7 +277,7 @@ export default () => ({
 
     const { pathname } = window.location;
     const url = pathname.replace('/proofing/', '/api/llm-structuring/');
-    const currentContent = this.editor.getText();
+    const currentContent = Alpine.raw(this.editor).getText();
 
     const content = await fetch(url, {
       headers: {
@@ -181,7 +291,7 @@ export default () => ({
         }
         return '(server error)';
       });
-    this.editor.setText(content);
+    Alpine.raw(this.editor).setText(content);
     $('#content').value = content;
 
     this.isRunningLLMStructuring = false;
@@ -193,7 +303,7 @@ export default () => ({
     const { pathname } = window.location;
     const url = pathname.replace('/proofing/', '/api/structuring/');
 
-    const currentContent = this.editor.getText();
+    const currentContent = Alpine.raw(this.editor).getText();
 
     const content = await fetch(url, {
       method: 'POST',
@@ -208,7 +318,7 @@ export default () => ({
         }
         return '(server error)';
       });
-    this.editor.setText(content);
+    Alpine.raw(this.editor).setText(content);
     $('#content').value = content;
 
     this.isRunningStructuring = false;
@@ -245,51 +355,177 @@ export default () => ({
 
   // Layout controls
 
-  displaySideBySide() {
-    this.layout = LAYOUT_SIDE_BY_SIDE;
+  displayImageOnLeft() {
+    this.layout = LAYOUT_IMAGE_LEFT;
     this.layoutClasses = this.getLayoutClasses();
     this.saveSettings();
   },
-  displayTopAndBottom() {
-    this.layout = LAYOUT_TOP_AND_BOTTOM;
+  displayImageOnRight() {
+    this.layout = LAYOUT_IMAGE_RIGHT;
+    this.layoutClasses = this.getLayoutClasses();
+    this.saveSettings();
+  },
+  displayImageOnTop() {
+    this.layout = LAYOUT_IMAGE_TOP;
+    this.layoutClasses = this.getLayoutClasses();
+    this.saveSettings();
+  },
+  displayImageOnBottom() {
+    this.layout = LAYOUT_IMAGE_BOTTOM;
     this.layoutClasses = this.getLayoutClasses();
     this.saveSettings();
   },
 
-  // Markup controls
+  displayVisualView() {
+    this.displayView(VIEW_VISUAL);
+  },
+
+  displayXMLView() {
+    this.displayView(VIEW_XML);
+  },
+
+  displayView(viewMode) {
+    // Already showing -- just return.
+    if (this.viewMode === viewMode) return;
+
+    // Store state before switching.
+    const editorElement = $('#prosemirror-editor');
+    const content = Alpine.raw(this.editor).getText();
+    Alpine.raw(this.editor).destroy();
+
+    if (viewMode === VIEW_VISUAL) {
+      try {
+        this.editor = new ProofingEditor(editorElement, content, () => {
+          this.hasUnsavedChanges = true;
+          $('#content').value = Alpine.raw(this.editor).getText();
+        }, this.showAdvancedOptions);
+
+      } catch (error) {
+        this.xmlParseError = `Invalid XML: ${error.message}`;
+        console.error('Failed to parse XML:', error);
+        return;
+      }
+    } else if (viewMode === VIEW_XML) {
+      this.editor = new XMLView(editorElement, content, () => {
+        this.hasUnsavedChanges = true;
+        $('#content').value = Alpine.raw(this.editor).getText();
+      });
+    }
+
+    // Reset state + focus
+    this.viewMode = viewMode;
+    this.xmlParseError = null;
+    this.saveSettings();
+    Alpine.raw(this.editor).focus();
+  },
+
+  toggleAdvancedOptions() {
+    this.showAdvancedOptions = !this.showAdvancedOptions;
+    this.saveSettings();
+
+    if (this.viewMode === VIEW_VISUAL && Alpine.raw(this.editor).setShowAdvancedOptions) {
+      Alpine.raw(this.editor).setShowAdvancedOptions(this.showAdvancedOptions);
+    }
+  },
 
   changeSelectedText(callback) {
-    const selection = this.editor.getSelection();
+    const selection = Alpine.raw(this.editor).getSelection();
     const replacement = callback(selection.text);
-    this.editor.replaceSelection(replacement);
-    $('#content').value = this.editor.getText();
+    Alpine.raw(this.editor).replaceSelection(replacement);
   },
+
   markAsError() {
-    this.changeSelectedText((s) => `<error>${s}</error>`);
+    Alpine.raw(this.editor).toggleMark('error');
   },
+
   markAsFix() {
-    this.changeSelectedText((s) => `<fix>${s}</fix>`);
+    Alpine.raw(this.editor).toggleMark('fix');
   },
+
   markAsUnclear() {
-    this.changeSelectedText((s) => `<flag>${s}</flag>`);
+    Alpine.raw(this.editor).toggleMark('flag');
   },
+
   markAsFootnoteNumber() {
-    this.changeSelectedText((s) => `[^${s}]`);
+    Alpine.raw(this.editor).toggleMark('ref');
   },
+
+  insertBlock() {
+    Alpine.raw(this.editor).insertBlock();
+  },
+
+  deleteBlock() {
+    Alpine.raw(this.editor).deleteActiveBlock();
+  },
+
+  undo() {
+    Alpine.raw(this.editor).undo();
+  },
+
+  redo() {
+    Alpine.raw(this.editor).redo();
+  },
+
   replaceColonVisarga() {
     this.changeSelectedText((s) => s.replaceAll(':', 'ः'));
   },
+
   replaceSAvagraha() {
     this.changeSelectedText((s) => s.replaceAll('S', 'ऽ'));
   },
-  transliterate() {
+
+  transliterateSelectedText() {
     this.changeSelectedText((s) => Sanscript.t(s, this.fromScript, this.toScript));
     this.saveSettings();
   },
 
-  // Character controls
   copyCharacter(e) {
     const character = e.target.textContent;
     navigator.clipboard.writeText(character);
+  },
+
+  async openHistoryModal() {
+    this.historyModalOpen = true;
+    this.historyLoading = true;
+    this.historyRevisions = [];
+
+    const { pathname } = window.location;
+    const url = pathname.replace('/proofing/', '/api/proofing/') + '/history';
+
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        this.historyRevisions = data.revisions || [];
+      } else {
+        console.error('Failed to fetch history:', response.status);
+      }
+    } catch (error) {
+      console.error('Error fetching history:', error);
+    } finally {
+      this.historyLoading = false;
+    }
+  },
+
+  closeHistoryModal() {
+    this.historyModalOpen = false;
+  },
+
+  getRevisionColorClass(status) {
+    if (status === 'reviewed-0') {
+      return 'bg-red-200 text-red-800';
+    } else if (status === 'reviewed-1') {
+      return 'bg-yellow-200 text-yellow-800';
+    } else if (status === 'reviewed-2') {
+      return 'bg-green-200 text-green-800';
+    } else if (status === 'skip') {
+      return 'bg-gray-200 text-gray-800';
+    }
+    return '';
+  },
+
+  submitForm(e) {
+    this.hasUnsavedChanges = false;
+    e.target.submit();
   },
 });

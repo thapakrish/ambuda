@@ -15,7 +15,7 @@ def test_edit__unauth(client):
 
 def test_edit__auth(rama_client):
     r = rama_client.get("/proofing/test-project/1/")
-    assert "Publish changes" in r.text
+    assert "Edit summary (optional)" in r.text
 
 
 def test_edit__bad_project(client):

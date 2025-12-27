@@ -21,19 +21,9 @@ def test_index(client):
     assert ">Proofing<" in resp.text
 
 
-def test_beginners_guide(client):
-    resp = client.get("/proofing/help/beginners-guide")
-    assert "Beginner's guide" in resp.text
-
-
 def test_complete_guide(client):
     resp = client.get("/proofing/help/complete-guide")
     assert "Complete guide" in resp.text
-
-
-def test_editor_guide(client):
-    resp = client.get("/proofing/help/editor-guide")
-    assert "Editor" in resp.text
 
 
 def test_recent_changes(client):

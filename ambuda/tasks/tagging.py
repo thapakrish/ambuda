@@ -23,7 +23,7 @@ from ambuda.utils.kosha import get_kosha
 
 
 # Dharmamitra rate limit is 100 sentences per minute
-DHARMAMITRA_MAX_QPS = 5 / 60.0
+DHARMAMITRA_MAX_QPS = 100 / 60.0
 
 
 class RateLimiter:

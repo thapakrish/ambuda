@@ -66,7 +66,10 @@ def run(file_path: Path) -> OcrResponse:
     logging.debug(f"Starting full text annotation: {file_path}")
 
     client = vision.ImageAnnotatorClient()
-    image = prepare_image(file_path)
+    try:
+        image = prepare_image(file_path)
+    except Exception:
+        return OcrResponse(text_content="", bounding_boxes=[])
 
     # Disable the language hint. It produced identical Devanagari output while
     # making English noticeably worse.
