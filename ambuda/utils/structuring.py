@@ -196,7 +196,13 @@ class ProofPage:
         root.text = "\n"
         for block in self.blocks:
             el = ET.SubElement(root, block.type)
-            temp_wrapper = DET.fromstring(f"<temp>{block.content.strip()}</temp>")
+            content = block.content.strip().replace("&", "&amp;")
+            try:
+                temp_wrapper = DET.fromstring(f"<temp>{content}</temp>")
+            except Exception:
+                temp_wrapper = ET.Element("temp")
+                temp_wrapper.text = content
+
             el.text = temp_wrapper.text
             for child in temp_wrapper:
                 el.append(child)
