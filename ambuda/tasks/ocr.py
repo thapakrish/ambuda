@@ -20,13 +20,13 @@ def _run_ocr_for_page_inner(
 ) -> int:
     """Run OCR for a single page without Flask dependency."""
 
-    with get_db_session(app_env) as (session, query, config_obj):
+    with get_db_session(app_env) as (session, query, cfg):
         bot_user = query.user(consts.BOT_USERNAME)
         if bot_user is None:
             raise ValueError(f'User "{consts.BOT_USERNAME}" is not defined.')
 
         # The actual API call.
-        image_path = get_page_image_filepath(project_slug, page_slug)
+        image_path = get_page_image_filepath(project_slug, page_slug, cfg.UPLOAD_FOLDER)
         ocr_response = google_ocr.run(image_path)
 
         project = query.project(project_slug)
@@ -47,6 +47,8 @@ def _run_ocr_for_page_inner(
                 version=0,
                 author_id=bot_user.id,
                 status=SitePageStatus.R0,
+                session=session,
+                query=query,
             )
         except Exception as e:
             raise ValueError(

@@ -690,7 +690,12 @@ export default class {
     this.showAdvancedOptions = showAdvancedOptions;
     this.blockViews = new Set();
 
-    const doc = parseXMLToDoc(initialContent, this.schema);
+    let doc;
+    try {
+      doc = parseXMLToDoc(initialContent, this.schema);
+    } catch  (error) {
+      doc = this.schema.node('doc', null, [this.schema.node('block', { type: 'p' })]);
+    }
 
     const state = EditorState.create({
       doc,

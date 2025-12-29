@@ -1,8 +1,10 @@
 from sqlalchemy import update
 import sqlalchemy as sqla
+from sqlalchemy.orm import Session
 
 from ambuda import database as db
 from ambuda import queries as q
+from ambuda.queries import Query
 
 
 class EditError(Exception):
@@ -21,6 +23,8 @@ def add_revision(
     status: str | None = None,
     status_id: int | None = None,
     batch_id: int | None = None,
+    session: Session | None = None,
+    query: Query | None = None,
 ) -> int:
     """Add a new revision for a page."""
     # If this doesn't update any rows, there's an edit conflict.
@@ -29,12 +33,13 @@ def add_revision(
     # FIXME: instead? Not sure if this is a clear win, but worth thinking about.
 
     # FIXME: Check for `proofreading` user permission before allowing changes
-    session = q.get_session()
+    query = query or Query()
+    session = session or q.get_session()
 
     if status_id is None:
         if status is None:
             raise ValueError("Either status or status_id must be provided")
-        status_ids = {s.name: s.id for s in q.page_statuses()}
+        status_ids = {s.name: s.id for s in query.page_statuses()}
         status_id = status_ids[status]
 
     new_version = version + 1

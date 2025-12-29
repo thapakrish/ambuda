@@ -37,10 +37,12 @@ def hashed_static(filename: str) -> str:
     return f"{base_url}?h={hash_prefix}"
 
 
-def get_page_image_filepath(project_slug: str, page_slug: str) -> Path:
+def get_page_image_filepath(
+    project_slug: str, page_slug: str, upload_folder: str
+) -> Path:
     """Get the location of the given image on disk.
 
     This function must run within an app context.
     """
-    image_dir = Path(current_app.config["UPLOAD_FOLDER"]) / "projects" / project_slug
+    image_dir = Path(upload_folder) / "projects" / project_slug
     return image_dir / "pages" / f"{page_slug}.jpg"

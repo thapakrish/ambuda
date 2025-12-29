@@ -244,7 +244,9 @@ def page_image(project_slug, page_slug):
     In production, we serve images directly from nginx.
     """
     assert current_app.debug
-    image_path = get_page_image_filepath(project_slug, page_slug)
+    image_path = get_page_image_filepath(
+        project_slug, page_slug, current_app.config["UPLOAD_FOLDER"]
+    )
     return send_file(image_path)
 
 
