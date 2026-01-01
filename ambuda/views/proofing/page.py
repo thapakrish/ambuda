@@ -192,8 +192,13 @@ def edit_post(project_slug, page_slug):
     if form.validate_on_submit():
         # `new_content` is already validated through EditPageForm.
         new_content = form.content.data
-        old_content = ctx.cur.revisions[-1].content
-        has_changed = old_content != new_content
+
+        cur_page = ctx.cur
+        cur_content = cur_page.revisions[-1].content
+        content_has_changed = cur_content != new_content
+
+        status_has_changed = cur_page.status.name != form.status.data
+        has_changed = content_has_changed or status_has_changed
         try:
             if has_changed:
                 new_version = add_revision(

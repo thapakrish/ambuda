@@ -3,6 +3,7 @@
 
 import { $ } from './core.ts';
 import ProofingEditor, { XMLView } from './prosemirror-editor.ts';
+import { INLINE_MARKS } from './marks-config.ts';
 
 const CONFIG_KEY = 'proofing-editor';
 
@@ -80,6 +81,11 @@ export default () => ({
   historyModalOpen: false,
   historyLoading: false,
   historyRevisions: [],
+  submitModalOpen: false,
+  modalSummary: '',
+  modalStatus: '',
+  originalContent: '',
+  changesPreview: '',
 
   init() {
     this.loadSettings();
@@ -88,6 +94,7 @@ export default () => ({
     // Initialize editor (either ProofingEditor or XMLView based on viewMode)
     const editorElement = $('#prosemirror-editor');
     const initialContent = $('#content').value || '';
+    this.originalContent = initialContent;
 
     // NOTE: always use Alpine.raw() to access the editor because Alpine reactivity/proxies breaks
     // the underlying data model and causes bizarre errors, e.g.:
@@ -104,7 +111,7 @@ export default () => ({
         $('#content').value = Alpine.raw(this.editor).getText();
       }, this.showAdvancedOptions);
     }
-    
+
     // Set `imageZoom` only after the viewer is fully initialized.
     this.imageViewer = initializeImageViewer(IMAGE_URL);
     this.imageViewer.addHandler('open', () => {
@@ -118,15 +125,19 @@ export default () => ({
   },
 
   getCommands() {
+    const markCommands = INLINE_MARKS.map(mark => ({
+      label: `Edit > ${mark.label}`,
+      action: () => this.toggleMark(mark.name)
+    }));
+
     return [
       { label: 'Edit > Undo', action: () => this.undo() },
       { label: 'Edit > Redo', action: () => this.redo() },
       { label: 'Edit > Insert block', action: () => this.insertBlock() },
       { label: 'Edit > Delete active block', action: () => this.deleteBlock() },
-      { label: 'Edit > Mark as error', action: () => this.markAsError() },
-      { label: 'Edit > Mark as fix', action: () => this.markAsFix() },
-      { label: 'Edit > Mark as unclear', action: () => this.markAsUnclear() },
-      { label: 'Edit > Mark as footnote number', action: () => this.markAsFootnoteNumber() },
+      { label: 'Edit > Move block up', action: () => this.moveBlockUp() },
+      { label: 'Edit > Move block down', action: () => this.moveBlockDown() },
+      ...markCommands,
       { label: 'View > Show image on left', action: () => this.displayImageOnLeft() },
       { label: 'View > Show image on right', action: () => this.displayImageOnRight() },
       { label: 'View > Show image on top', action: () => this.displayImageOnTop() },
@@ -434,20 +445,8 @@ export default () => ({
     Alpine.raw(this.editor).replaceSelection(replacement);
   },
 
-  markAsError() {
-    Alpine.raw(this.editor).toggleMark('error');
-  },
-
-  markAsFix() {
-    Alpine.raw(this.editor).toggleMark('fix');
-  },
-
-  markAsUnclear() {
-    Alpine.raw(this.editor).toggleMark('flag');
-  },
-
-  markAsFootnoteNumber() {
-    Alpine.raw(this.editor).toggleMark('ref');
+  toggleMark(markName) {
+    Alpine.raw(this.editor).toggleMark(markName);
   },
 
   insertBlock() {
@@ -456,6 +455,14 @@ export default () => ({
 
   deleteBlock() {
     Alpine.raw(this.editor).deleteActiveBlock();
+  },
+
+  moveBlockUp() {
+    Alpine.raw(this.editor).moveBlockUp();
+  },
+
+  moveBlockDown() {
+    Alpine.raw(this.editor).moveBlockDown();
   },
 
   undo() {
@@ -522,6 +529,101 @@ export default () => ({
       return 'bg-gray-200 text-gray-800';
     }
     return '';
+  },
+
+  openSubmitModal() {
+    // Sync to text area.
+    const currentContent = Alpine.raw(this.editor).getText();
+    $('#content').value = currentContent;
+
+    this.changesPreview = this.generateChangesPreview();
+
+    this.modalSummary = $('input[name="summary"]')?.value || '';
+    this.modalStatus = $('input[name="status"]')?.value || '';
+    this.submitModalOpen = true;
+  },
+
+  closeSubmitModal() {
+    this.submitModalOpen = false;
+  },
+
+  generateChangesPreview() {
+    const currentContent = Alpine.raw(this.editor).getText();
+
+    // Trim and normalize whitespace for comparison
+    const originalTrimmed = this.originalContent.trim();
+    const currentTrimmed = currentContent.trim();
+
+    if (originalTrimmed === currentTrimmed) {
+      return '<span class="text-slate-500 italic">No changes made</span>';
+    }
+
+    // Simple diff: show both old and new content
+    const originalLines = originalTrimmed.split('\n');
+    const currentLines = currentTrimmed.split('\n');
+
+    let diff = '';
+    const maxLines = Math.max(originalLines.length, currentLines.length);
+
+    // Show a simple comparison (first 15 changed lines)
+    let changedCount = 0;
+    let unchangedCount = 0;
+
+    for (let i = 0; i < maxLines && changedCount < 15; i++) {
+      const oldLine = originalLines[i] || '';
+      const newLine = currentLines[i] || '';
+
+      if (oldLine !== newLine) {
+        changedCount++;
+        unchangedCount = 0;
+
+        if (oldLine && newLine) {
+          diff += `<div class="text-red-700 bg-red-50 px-2 py-1 mb-0.5">- ${this.escapeHtml(oldLine)}</div>`;
+          diff += `<div class="text-green-700 bg-green-50 px-2 py-1 mb-1">+ ${this.escapeHtml(newLine)}</div>`;
+        } else if (oldLine) {
+          diff += `<div class="text-red-700 bg-red-50 px-2 py-1 mb-1">- ${this.escapeHtml(oldLine)}</div>`;
+        } else if (newLine) {
+          diff += `<div class="text-green-700 bg-green-50 px-2 py-1 mb-1">+ ${this.escapeHtml(newLine)}</div>`;
+        }
+      } else {
+        unchangedCount++;
+        if (unchangedCount <= 2 && changedCount > 0) {
+          diff += `<div class="text-slate-500 px-2 py-1 mb-0.5 text-xs">  ${this.escapeHtml(oldLine)}</div>`;
+        }
+      }
+    }
+
+    if (changedCount === 0) {
+      return '<span class="text-slate-500 italic">Only whitespace changes detected</span>';
+    }
+
+    if (maxLines > 15 + changedCount) {
+      diff += `<div class="text-slate-500 italic mt-2 text-xs">... and more changes (${maxLines} total lines)</div>`;
+    }
+
+    return diff || '<span class="text-slate-500 italic">Changes detected</span>';
+  },
+
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  },
+
+  submitFormFromModal() {
+    const summaryInput = $('input[name="summary"]');
+    const statusInput = $('input[name="status"]');
+
+    if (summaryInput) summaryInput.value = this.modalSummary;
+    if (statusInput) statusInput.value = this.modalStatus;
+
+    this.closeSubmitModal();
+    this.hasUnsavedChanges = false;
+
+    const form = $('form');
+    if (form) {
+      form.submit();
+    }
   },
 
   submitForm(e) {

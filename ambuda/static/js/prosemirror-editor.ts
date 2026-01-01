@@ -4,6 +4,7 @@ import { Schema, Node as PMNode, Mark, DOMParser as PMDOMParser, DOMSerializer, 
 import { keymap } from 'prosemirror-keymap';
 import { history, undo as pmUndo, redo as pmRedo } from 'prosemirror-history';
 import { baseKeymap } from 'prosemirror-commands';
+import { INLINE_MARKS, getAllMarkNames, type MarkName } from './marks-config.ts';
 
 const BLOCK_TYPES = [
   { tag: 'p', label: 'Paragraph', color: 'blue' },
@@ -85,37 +86,23 @@ const nodes: Record<string, NodeSpec> = {
 };
 
 // Marks are labels attached to text.
-const marks: Record<string, MarkSpec> = {
-  error: {
-    parseDOM: [{ tag: 'error' }],
-    toDOM() {
-      return ['span', { class: 'pm-error' }, 0];
+const marks: Record<string, MarkSpec> = Object.fromEntries(
+  INLINE_MARKS.map(markConfig => [
+    markConfig.name,
+    {
+      parseDOM: [{ tag: markConfig.name }],
+      toDOM() {
+        return ['span', { class: markConfig.className }, 0];
+      },
+      ...(markConfig.excludes ? { excludes: markConfig.excludes } : {}),
     },
-  },
-  fix: {
-    parseDOM: [{ tag: 'fix' }],
-    toDOM() {
-      return ['span', { class: 'pm-fix' }, 0];
-    },
-  },
-  ref: {
-    parseDOM: [{ tag: 'ref' }],
-    toDOM() {
-      return ['span', { class: 'pm-ref' }, 0];
-    },
-  },
-  flag: {
-    parseDOM: [{ tag: 'flag' }],
-    toDOM() {
-      return ['span', { class: 'pm-flag' }, 0];
-    },
-  },
-};
+  ])
+);
 
 const customSchema = new Schema({ nodes, marks });
 
 function createBlockBelow(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
-  const { $from } = state.selection;
+  const { $from, $to } = state.selection;
   const currentBlock = $from.node($from.depth);
 
   if (currentBlock.type.name !== 'block') {
@@ -124,10 +111,60 @@ function createBlockBelow(state: EditorState, dispatch?: (tr: Transaction) => vo
 
   if (dispatch) {
     const blockPos = $from.before($from.depth);
-    const afterPos = blockPos + currentBlock.nodeSize;
-    const newBlock = state.schema.nodes.block.create({ type: 'p' });
-    const tr = state.tr.insert(afterPos, newBlock);
-    tr.setSelection(Selection.near(tr.doc.resolve(afterPos + 1)));
+    const blockStart = blockPos + 1; // +1 to account for the block node itself
+    const cursorPos = $from.pos;
+
+    const cursorInBlock = cursorPos - blockStart;
+
+    const contentBefore: PMNode[] = [];
+    const contentAfter: PMNode[] = [];
+
+    let currentPos = 0;
+    currentBlock.forEach((child, offset) => {
+      const childEnd = currentPos + child.nodeSize;
+
+      if (childEnd <= cursorInBlock) {
+        // Entire child is before cursor
+        contentBefore.push(child);
+      } else if (currentPos >= cursorInBlock) {
+        // Entire child is after cursor
+        contentAfter.push(child);
+      } else {
+        // Cursor is within this child (text node)
+        if (child.isText) {
+          const splitPoint = cursorInBlock - currentPos;
+          const textBefore = child.text!.substring(0, splitPoint);
+          const textAfter = child.text!.substring(splitPoint);
+
+          if (textBefore) {
+            contentBefore.push(state.schema.text(textBefore, child.marks));
+          }
+          if (textAfter) {
+            contentAfter.push(state.schema.text(textAfter, child.marks));
+          }
+        }
+      }
+
+      currentPos = childEnd;
+    });
+
+    let tr = state.tr;
+    const newCurrentBlock = state.schema.nodes.block.create(
+      currentBlock.attrs,
+      contentBefore.length > 0 ? contentBefore : undefined
+    );
+    tr = tr.replaceWith(blockPos, blockPos + currentBlock.nodeSize, newCurrentBlock);
+
+    const afterPos = blockPos + newCurrentBlock.nodeSize;
+    const newBlock = state.schema.nodes.block.create(
+      { type: 'p' },
+      contentAfter.length > 0 ? contentAfter : undefined
+    );
+    tr = tr.insert(afterPos, newBlock);
+
+    // Set cursor at the beginning of the new block
+    tr = tr.setSelection(Selection.near(tr.doc.resolve(afterPos + 1)));
+
     dispatch(tr);
   }
 
@@ -147,8 +184,13 @@ class BlockView {
   nInput: HTMLInputElement;
   nLabel: HTMLSpanElement;
   markInput: HTMLInputElement;
+  markLabel: HTMLSpanElement;
   mergeCheckbox: HTMLInputElement;
   mergeLabel: HTMLLabelElement;
+  dropdownButton: HTMLButtonElement;
+  dropdownMenu: HTMLElement;
+  dropdownWrapper: HTMLElement;
+  dropdownOpen: boolean;
   editor: any; // ProofingEditor instance
 
   constructor(node: PMNode, view: EditorView, getPos: () => number | undefined, editor: any) {
@@ -156,6 +198,7 @@ class BlockView {
     this.view = view;
     this.getPos = getPos;
     this.editor = editor;
+    this.dropdownOpen = false;
 
     // Register this BlockView with the editor
     if (editor.blockViews) {
@@ -208,39 +251,36 @@ class BlockView {
     this.textInput.addEventListener('change', () => this.updateNodeAttr('text', this.textInput.value || null));
     this.controlsDOM.appendChild(this.textInput);
 
-    // N field (if not footnote)
-    if (node.attrs.type !== 'footnote') {
-      this.nLabel = document.createElement('span');
-      this.nLabel.className = 'text-slate-400 text-[11px] ml-1';
-      this.nLabel.textContent = 'n=';
-      this.nLabel.style.display = this.editor.showAdvancedOptions ? '' : 'none';
-      this.controlsDOM.appendChild(this.nLabel);
+    // N field (shown for non-footnote blocks)
+    this.nLabel = document.createElement('span');
+    this.nLabel.className = 'text-slate-400 text-[11px] ml-1';
+    this.nLabel.textContent = 'n=';
+    this.controlsDOM.appendChild(this.nLabel);
 
-      this.nInput = document.createElement('input');
-      this.nInput.type = 'text';
-      this.nInput.value = node.attrs.n || '';
-      this.nInput.placeholder = '#';
-      this.nInput.className = 'border border-slate-300 bg-transparent font-mono text-xs text-slate-600 w-12 px-1 py-0 hover:bg-slate-100 rounded';
-      this.nInput.style.display = this.editor.showAdvancedOptions ? '' : 'none';
-      this.nInput.addEventListener('change', () => this.updateNodeAttr('n', this.nInput.value || null));
-      this.controlsDOM.appendChild(this.nInput);
-    }
+    this.nInput = document.createElement('input');
+    this.nInput.type = 'text';
+    this.nInput.value = node.attrs.n || '';
+    this.nInput.placeholder = '#';
+    this.nInput.className = 'border border-slate-300 bg-transparent font-mono text-xs text-slate-600 w-12 px-1 py-0 hover:bg-slate-100 rounded';
+    this.nInput.addEventListener('change', () => this.updateNodeAttr('n', this.nInput.value || null));
+    this.controlsDOM.appendChild(this.nInput);
 
-    // Mark field (if footnote)
-    if (node.attrs.type === 'footnote') {
-      const markLabel = document.createElement('span');
-      markLabel.className = 'text-slate-400 text-[11px] ml-1';
-      markLabel.textContent = 'mark=';
-      this.controlsDOM.appendChild(markLabel);
+    // Mark field (shown for footnote blocks)
+    this.markLabel = document.createElement('span');
+    this.markLabel.className = 'text-slate-400 text-[11px] ml-1';
+    this.markLabel.textContent = 'mark=';
+    this.controlsDOM.appendChild(this.markLabel);
 
-      this.markInput = document.createElement('input');
-      this.markInput.type = 'text';
-      this.markInput.value = node.attrs.mark || '';
-      this.markInput.placeholder = 'mark';
-      this.markInput.className = 'border border-slate-300 bg-transparent font-mono text-xs text-slate-600 w-16 px-1 py-0 hover:bg-slate-100 rounded';
-      this.markInput.addEventListener('change', () => this.updateNodeAttr('mark', this.markInput.value || null));
-      this.controlsDOM.appendChild(this.markInput);
-    }
+    this.markInput = document.createElement('input');
+    this.markInput.type = 'text';
+    this.markInput.value = node.attrs.mark || '';
+    this.markInput.placeholder = 'mark';
+    this.markInput.className = 'border border-slate-300 bg-transparent font-mono text-xs text-slate-600 w-16 px-1 py-0 hover:bg-slate-100 rounded';
+    this.markInput.addEventListener('change', () => this.updateNodeAttr('mark', this.markInput.value || null));
+    this.controlsDOM.appendChild(this.markInput);
+
+    // Set initial visibility based on block type
+    this.updateFieldVisibility();
 
     // Merge checkbox
     this.mergeLabel = document.createElement('label');
@@ -261,6 +301,85 @@ class BlockView {
     this.mergeLabel.appendChild(mergeText);
     this.controlsDOM.appendChild(this.mergeLabel);
 
+    // Add dropdown menu wrapper with relative positioning
+    this.dropdownWrapper = document.createElement('div');
+    this.dropdownWrapper.className = 'ml-auto relative';
+
+    // Dropdown button
+    this.dropdownButton = document.createElement('button');
+    this.dropdownButton.type = 'button';
+    this.dropdownButton.className = 'text-[11px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded border border-slate-300';
+    this.dropdownButton.title = 'Block actions';
+    this.dropdownButton.innerHTML = '&hellip;';
+    this.dropdownButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.toggleDropdown();
+    });
+    this.dropdownWrapper.appendChild(this.dropdownButton);
+
+    // Dropdown menu
+    this.dropdownMenu = document.createElement('div');
+    this.dropdownMenu.className = 'absolute right-0 mt-1 bg-white border border-slate-300 rounded shadow-lg z-10 min-w-[140px]';
+    this.dropdownMenu.style.display = 'none';
+
+    // Add below button
+    const addBelowBtn = document.createElement('button');
+    addBelowBtn.type = 'button';
+    addBelowBtn.className = 'w-full text-left px-3 py-2 text-xs hover:bg-slate-100 flex items-center gap-2';
+    addBelowBtn.innerHTML = '<span class="text-green-600">+</span> Add below';
+    addBelowBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.addBlockBelow();
+      this.closeDropdown();
+    });
+    this.dropdownMenu.appendChild(addBelowBtn);
+
+    // Move up button
+    const moveUpBtn = document.createElement('button');
+    moveUpBtn.type = 'button';
+    moveUpBtn.className = 'w-full text-left px-3 py-2 text-xs hover:bg-slate-100 flex items-center gap-2 border-t border-slate-200';
+    moveUpBtn.innerHTML = '<span>↑</span> Move up';
+    moveUpBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.moveBlockUp();
+      this.closeDropdown();
+    });
+    this.dropdownMenu.appendChild(moveUpBtn);
+
+    // Move down button
+    const moveDownBtn = document.createElement('button');
+    moveDownBtn.type = 'button';
+    moveDownBtn.className = 'w-full text-left px-3 py-2 text-xs hover:bg-slate-100 flex items-center gap-2';
+    moveDownBtn.innerHTML = '<span>↓</span> Move down';
+    moveDownBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.moveBlockDown();
+      this.closeDropdown();
+    });
+    this.dropdownMenu.appendChild(moveDownBtn);
+
+    // Remove button
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-700 flex items-center gap-2 border-t border-slate-200';
+    removeBtn.innerHTML = '<span>×</span> Remove';
+    removeBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.removeBlock();
+      this.closeDropdown();
+    });
+    this.dropdownMenu.appendChild(removeBtn);
+
+    this.dropdownWrapper.appendChild(this.dropdownMenu);
+    this.controlsDOM.appendChild(this.dropdownWrapper);
+
+    // Add click outside listener to close dropdown
+    document.addEventListener('click', (e) => {
+      if (this.dropdownOpen && !this.dropdownWrapper.contains(e.target as Node)) {
+        this.closeDropdown();
+      }
+    });
+
     this.dom.appendChild(this.controlsDOM);
 
     // Create content area
@@ -268,6 +387,24 @@ class BlockView {
     this.contentDOM.className = 'w-full text-base p-2 border border-slate-200 bg-white rounded font-normal min-h-[3rem] focus:outline-none focus:ring-2 focus:ring-blue-400 whitespace-pre-wrap';
     this.contentDOM.contentEditable = 'true';
     this.dom.appendChild(this.contentDOM);
+  }
+
+  updateFieldVisibility() {
+    const isFootnote = this.node.attrs.type === 'footnote';
+    const showAdvanced = this.editor.showAdvancedOptions;
+
+    // N field: show for non-footnote blocks when advanced options are enabled
+    if (this.nLabel && this.nInput) {
+      const showN = !isFootnote && showAdvanced;
+      this.nLabel.style.display = showN ? '' : 'none';
+      this.nInput.style.display = showN ? '' : 'none';
+    }
+
+    // Mark field: always show for footnote blocks, hide for others
+    if (this.markLabel && this.markInput) {
+      this.markLabel.style.display = isFootnote ? '' : 'none';
+      this.markInput.style.display = isFootnote ? '' : 'none';
+    }
   }
 
   updateNodeAttr(name: string, value: any) {
@@ -286,6 +423,7 @@ class BlockView {
       if (this.node.attrs.merge_next) {
         this.dom.classList.add('bg-yellow-50', '!border-dashed');
       }
+      this.updateFieldVisibility();
     }
 
     // Update visual classes if merge_next changed
@@ -327,6 +465,8 @@ class BlockView {
       this.mergeCheckbox.checked = node.attrs.merge_next;
     }
 
+    this.updateFieldVisibility();
+
     return true;
   }
 
@@ -348,13 +488,65 @@ class BlockView {
     const show = this.editor.showAdvancedOptions;
     this.textLabel.style.display = show ? '' : 'none';
     this.textInput.style.display = show ? '' : 'none';
-    if (this.nLabel) {
-      this.nLabel.style.display = show ? '' : 'none';
-    }
-    if (this.nInput) {
-      this.nInput.style.display = show ? '' : 'none';
-    }
     this.mergeLabel.style.display = show ? '' : 'none';
+    // Update n and mark field visibility based on both advanced options and block type
+    this.updateFieldVisibility();
+  }
+
+  toggleDropdown() {
+    this.dropdownOpen = !this.dropdownOpen;
+    this.dropdownMenu.style.display = this.dropdownOpen ? 'block' : 'none';
+  }
+
+  closeDropdown() {
+    this.dropdownOpen = false;
+    this.dropdownMenu.style.display = 'none';
+  }
+
+  addBlockBelow() {
+    const pos = this.getPos();
+    if (pos === undefined) return;
+
+    const blockPos = pos;
+    const afterPos = blockPos + this.node.nodeSize;
+    const newBlock = this.view.state.schema.nodes.block.create({ type: 'p' });
+    const tr = this.view.state.tr.insert(afterPos, newBlock);
+    tr.setSelection(Selection.near(tr.doc.resolve(afterPos + 1)));
+    this.view.dispatch(tr);
+  }
+
+  removeBlock() {
+    const pos = this.getPos();
+    if (pos === undefined) return;
+
+    // Don't allow deleting if it's the only block
+    if (this.view.state.doc.childCount === 1) {
+      alert('Cannot remove the last block');
+      return;
+    }
+
+    if (confirm('Are you sure you want to remove this block?')) {
+      const tr = this.view.state.tr.delete(pos, pos + this.node.nodeSize);
+      this.view.dispatch(tr);
+    }
+  }
+
+  moveBlockUp() {
+    const pos = this.getPos();
+    if (pos === undefined) return;
+
+    const tr = this.view.state.tr.setSelection(Selection.near(this.view.state.doc.resolve(pos + 1)));
+    this.view.dispatch(tr);
+    this.editor.moveBlockUp();
+  }
+
+  moveBlockDown() {
+    const pos = this.getPos();
+    if (pos === undefined) return;
+
+    const tr = this.view.state.tr.setSelection(Selection.near(this.view.state.doc.resolve(pos + 1)));
+    this.view.dispatch(tr);
+    this.editor.moveBlockDown();
   }
 
   destroy() {
@@ -443,7 +635,8 @@ function parseInlineContent(elem: Element, schema: Schema): PMNode[] {
       const tagName = el.tagName.toLowerCase();
 
       // Check if it's a mark we want to render visually
-      if (tagName === 'error' || tagName === 'fix' || tagName === 'flag' || tagName === 'ref') {
+      const validMarkNames = getAllMarkNames();
+      if (validMarkNames.includes(tagName)) {
         const mark = schema.mark(tagName);
         const newMarks = mark.addToSet(marks);
         // Traverse children with the mark applied
@@ -759,7 +952,7 @@ export default class {
     }
   }
 
-  toggleMark(markType: 'error' | 'fix' | 'flag' | 'ref') {
+  toggleMark(markType: MarkName) {
     console.log("togglemark", markType);
     const { state, dispatch } = this.view;
     const { from, to } = state.selection;
@@ -827,6 +1020,132 @@ export default class {
     const blockPos = $from.before(blockDepth);
     const currentBlock = $from.node(blockDepth);
     const tr = state.tr.delete(blockPos, blockPos + currentBlock.nodeSize);
+
+    dispatch(tr);
+
+    if (this.onChange) {
+      this.onChange();
+    }
+  }
+
+  moveBlockUp() {
+    const { state, dispatch } = this.view;
+    const { $from } = state.selection;
+
+    // Find the current block
+    let blockDepth = $from.depth;
+    while (blockDepth > 0 && state.doc.resolve($from.pos).node(blockDepth).type.name !== 'block') {
+      blockDepth--;
+    }
+
+    if (blockDepth === 0) return;
+
+    const currentBlock = $from.node(blockDepth);
+
+    // Find block index by iterating through doc children
+    let blockIndex = -1;
+    for (let i = 0; i < state.doc.childCount; i++) {
+      if (state.doc.child(i) === currentBlock) {
+        blockIndex = i;
+        break;
+      }
+    }
+
+    if (blockIndex <= 0) {
+      console.log('Cannot move up: already at the top');
+      return;
+    }
+
+    // Get the previous block
+    const prevBlock = state.doc.child(blockIndex - 1);
+
+    // Calculate positions
+    let prevBlockStart = 0;
+    for (let i = 0; i < blockIndex - 1; i++) {
+      prevBlockStart += state.doc.child(i).nodeSize;
+    }
+    const currentBlockStart = prevBlockStart + prevBlock.nodeSize;
+
+    // Create new doc with blocks swapped
+    const newChildren: PMNode[] = [];
+    for (let i = 0; i < state.doc.childCount; i++) {
+      if (i === blockIndex - 1) {
+        newChildren.push(currentBlock);
+      } else if (i === blockIndex) {
+        newChildren.push(prevBlock);
+      } else {
+        newChildren.push(state.doc.child(i));
+      }
+    }
+
+    const newDoc = state.schema.node('doc', null, newChildren);
+    let tr = state.tr.replaceWith(0, state.doc.content.size, newDoc);
+
+    // Set selection to the moved block (now at prevBlockStart)
+    tr = tr.setSelection(Selection.near(tr.doc.resolve(prevBlockStart + 1)));
+
+    dispatch(tr);
+
+    if (this.onChange) {
+      this.onChange();
+    }
+  }
+
+  moveBlockDown() {
+    const { state, dispatch } = this.view;
+    const { $from } = state.selection;
+
+    // Find the current block
+    let blockDepth = $from.depth;
+    while (blockDepth > 0 && state.doc.resolve($from.pos).node(blockDepth).type.name !== 'block') {
+      blockDepth--;
+    }
+
+    if (blockDepth === 0) return;
+
+    const currentBlock = $from.node(blockDepth);
+
+    // Find block index by iterating through doc children
+    let blockIndex = -1;
+    for (let i = 0; i < state.doc.childCount; i++) {
+      if (state.doc.child(i) === currentBlock) {
+        blockIndex = i;
+        break;
+      }
+    }
+
+    if (blockIndex < 0 || blockIndex >= state.doc.childCount - 1) {
+      console.log('Cannot move down: already at the bottom');
+      return;
+    }
+
+    // Get the next block
+    const nextBlock = state.doc.child(blockIndex + 1);
+
+    // Calculate position where current block will be after swap
+    let currentBlockStart = 0;
+    for (let i = 0; i < blockIndex; i++) {
+      currentBlockStart += state.doc.child(i).nodeSize;
+    }
+    const newCurrentBlockStart = currentBlockStart + nextBlock.nodeSize;
+
+    // Create new doc with blocks swapped
+    const newChildren: PMNode[] = [];
+    for (let i = 0; i < state.doc.childCount; i++) {
+      if (i === blockIndex) {
+        newChildren.push(nextBlock);
+      } else if (i === blockIndex + 1) {
+        newChildren.push(currentBlock);
+      } else {
+        newChildren.push(state.doc.child(i));
+      }
+    }
+
+    const newDoc = state.schema.node('doc', null, newChildren);
+    let tr = state.tr.replaceWith(0, state.doc.content.size, newDoc);
+
+    // Set selection to the moved block (now at newCurrentBlockStart)
+    tr = tr.setSelection(Selection.near(tr.doc.resolve(newCurrentBlockStart + 1)));
 
     dispatch(tr);
 
