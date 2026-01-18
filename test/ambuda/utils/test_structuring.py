@@ -84,8 +84,8 @@ def test_validate_page_xml(input, expected):
         # <error> and <fix>
         # Error and fix consecutively (despite whitespace) --> sic and corr
         (
-            "<p>foo<error>bar</error> <fix>biz</fix></p>",
-            "<p>foo<choice><sic>bar</sic><corr>biz</corr></choice></p>",
+            "<p>foo<error>bar</error> <fix>biz</fix> tail</p>",
+            "<p>foo<choice><sic>bar</sic><corr>biz</corr></choice> tail</p>",
         ),
         # Invariant to order.
         (
@@ -94,11 +94,13 @@ def test_validate_page_xml(input, expected):
         ),
         # Error alone --> sic, with empty corr
         (
-            "<p>foo<error>bar</error></p>",
-            "<p>foo<choice><sic>bar</sic><corr /></choice></p>",
+            "<p>foo<error>bar</error> tail</p>",
+            "<p>foo<choice><sic>bar</sic><corr /></choice> tail</p>",
         ),
         # Fix alone --> supplied (no corr)
         ("<p>foo<fix>bar</fix></p>", "<p>foo<supplied>bar</supplied></p>"),
+        # Separate fix and error -- don't group into a single choice
+        ("<p>foo<error>bar</error> biz <fix>baf</fix> tail</p>", "<p>foo<choice><sic>bar</sic><corr /></choice> biz <supplied>baf</supplied> tail</p>"),
         # <chaya>
         (
             "<p>aoeu<x>foo</x><chaya>asdf<y>bar</y></chaya></p>",
@@ -217,7 +219,7 @@ def test_from_content_and_page_id():
                     B(type="p", content="a", n="1"),
                 ],
             ),
-            s.TEIBlock(xml='<p n="1">अ a</p>', slug="1", page_id=0),
+            s.TEIBlock(xml='<p n="1">अ<pb n="-" />a</p>', slug="1", page_id=0),
         ),
         # <p> with speaker
         (
@@ -246,7 +248,7 @@ def test_from_content_and_page_id():
                 ],
             ),
             s.TEIBlock(
-                xml='<sp n="1"><speaker>foo</speaker><p>अ a</p></sp>',
+                xml='<sp n="1"><speaker>foo</speaker><p>अ<pb n="-" />a</p></sp>',
                 slug="1",
                 page_id=0,
             ),
@@ -265,7 +267,7 @@ def test_from_content_and_page_id():
                     B(type="verse", content="a", n="1"),
                 ],
             ),
-            s.TEIBlock(xml='<lg n="1"><l>अ</l><l>a</l></lg>', slug="1", page_id=0),
+            s.TEIBlock(xml='<lg n="1"><l>अ</l><pb n="-" /><l>a</l></lg>', slug="1", page_id=0),
         ),
         # Other
         (

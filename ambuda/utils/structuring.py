@@ -187,6 +187,7 @@ def _rewrite_block_to_tei_xml(xml: ET.Element):
     i = 0
     while i < len(xml):
         el = xml[i]
+        el_tail = (el.tail or "").strip()
         if el.tag not in ("error", "fix"):
             i += 1
             continue
@@ -194,14 +195,17 @@ def _rewrite_block_to_tei_xml(xml: ET.Element):
         # Standardize order: <error> then <fix>
         if i + 1 < len(xml):
             el_next = xml[i + 1]
-            if (el.tag, el_next.tag) == ("fix", "error"):
+            if (el.tag, el_next.tag) == ("fix", "error") and not el_tail:
+                # Normalize to avoid weird errors later.
+                el.tail = ""
                 xml[i], xml[i + 1] = el_next, el
 
         # Reload since `el` may be stale after swap.
         el = xml[i]
         if el.tag == "error":
             error = xml[i]
-            maybe_fix = xml[i + 1] if i + 1 < len(xml) else None
+            has_counterpart = (i + 1 < len(xml) and not el_tail)
+            maybe_fix = xml[i + 1] if has_counterpart else None
 
             choice = ET.Element("choice")
             sic = ET.SubElement(choice, "sic")
@@ -209,9 +213,10 @@ def _rewrite_block_to_tei_xml(xml: ET.Element):
             corr = ET.SubElement(choice, "corr")
             if maybe_fix is not None:
                 corr.text = maybe_fix.text or ""
-
-            if maybe_fix is not None:
+                choice.tail = maybe_fix.tail
                 del xml[i + 1]
+            else:
+                choice.tail = error.tail
             del xml[i]
 
             xml.insert(i, choice)
@@ -287,7 +292,7 @@ def _rewrite_block_to_tei_xml(xml: ET.Element):
         xml.extend(lines)
 
 
-def _concatenate_tei_xml_blocks(first: ET.Element, second: ET.Element):
+def _concatenate_tei_xml_blocks(first: ET.Element, second: ET.Element, page_number: str):
     """Concatenate two blocks of TEI xml by updating the first block in-place.
 
     Use case: merging blocks across page breaks.
@@ -295,15 +300,13 @@ def _concatenate_tei_xml_blocks(first: ET.Element, second: ET.Element):
     if first.tag == "sp":
         # Special case for <sp>: concatenate children, leaving speaker alone.
         assert len(first) == 2
-        _concatenate_tei_xml_blocks(first[1], second)
+        _concatenate_tei_xml_blocks(first[1], second, page_number)
         return
 
-    if first.tag == "p":
-        # Special case for <p>
-        if len(first):
-            first[-1].tail = (first[-1].tail or "") + " " + (second.text or "")
-        else:
-            first.text = (first.text or "") + " " + (second.text or "")
+    if first.tag in {"p", "lg"}:
+        pb = ET.SubElement(first, "pb")
+        pb.attrib["n"] = page_number
+        pb.tail = second.text or ""
 
     first.extend(second)
 
@@ -588,22 +591,22 @@ class ProofProject:
             if block.type not in {"p", "verse"}:
                 continue
 
+            try:
+                print_page_number = page_numbers[page_index]
+            except IndexError:
+                print_page_number = DEFAULT_PRINT_PAGE_NUMBER
+
             block_xml = DET.fromstring(f"<{block.type}>{block.content}</{block.type}>")
             _rewrite_block_to_tei_xml(block_xml)
 
             tag_name = block_xml.tag
             if block.n in tree_map:
                 first = tree_map[block.n]
-                _concatenate_tei_xml_blocks(first, block_xml)
+                _concatenate_tei_xml_blocks(first, block_xml, print_page_number)
             else:
                 block_xml.attrib["n"] = block.n
                 tree_map[block.n] = block_xml
                 page_map[block.n] = page.id
-
-            try:
-                print_page_number = page_numbers[page_index]
-            except IndexError:
-                print_page_number = DEFAULT_PRINT_PAGE_NUMBER
 
         tei_sections = {}
         for block_slug, tree in tree_map.items():
