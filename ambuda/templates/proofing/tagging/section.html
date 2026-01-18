@@ -14,7 +14,7 @@
 <div class="mb-4">
   <h1 class="text-3xl font-bold">
     <a class="text-slate-400 hover:text-blue-600"
-        href="{{ url_for('proofing.tagging.text_tagging', text_slug=text.slug) }}">
+        href="{{ url_for('proofing.tagging.text', text_slug=text.slug) }}">
        {{ text.title|devanagari }}
     </a>
     <span class="text-slate-600">/ Batch Edit Parse Data</span>
@@ -298,7 +298,7 @@
       </template>
   </div>
 
-  <form method="POST" action="{{ url_for('proofing.tagging.section_tagging', text_slug=text.slug, section=section.slug) }}">
+  <form method="POST" action="{{ url_for('proofing.tagging.section', text_slug=text.slug, section=section.slug) }}">
     <input type="hidden" name="parse_data" x-ref="parseDataInput">
   </form>
 

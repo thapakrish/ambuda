@@ -133,6 +133,19 @@ def _get_page_number(project_: db.Project, page_: db.Page) -> str:
     return page_.slug
 
 
+def _get_image_url(project: db.Project, page: db.Page) -> str:
+    """Handler for getting the image URL (S3 migration in progress.)"""
+    CLOUDFRONT_BASE_URL = current_app.config.get("CLOUDFRONT_BASE_URL")
+    if current_app.debug or not CLOUDFRONT_BASE_URL:
+        return url_for(
+            "site.page_image", project_slug=project.slug, page_slug=page.slug
+        )
+
+    page_uuid = page.uuid
+    s3_url = f"{CLOUDFRONT_BASE_URL}/pages/{page_uuid}.jpg"
+    return s3_url
+
+
 @bp.route("/<project_slug>/<page_slug>/")
 def edit(project_slug, page_slug):
     """Display the page editor."""
@@ -159,6 +172,7 @@ def edit(project_slug, page_slug):
     is_r0 = cur.status.name == SitePageStatus.R0
     image_number = cur.slug
     page_number = _get_page_number(ctx.project, cur)
+    image_url = _get_image_url(ctx.project, cur)
 
     return render_template(
         "proofing/pages/edit.html",
@@ -171,6 +185,7 @@ def edit(project_slug, page_slug):
         page_context=ctx,
         page_number=page_number,
         project=ctx.project,
+        image_url=image_url,
     )
 
 

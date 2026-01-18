@@ -204,7 +204,7 @@ def _rewrite_block_to_tei_xml(xml: ET.Element):
         el = xml[i]
         if el.tag == "error":
             error = xml[i]
-            has_counterpart = (i + 1 < len(xml) and not el_tail)
+            has_counterpart = i + 1 < len(xml) and not el_tail
             maybe_fix = xml[i + 1] if has_counterpart else None
 
             choice = ET.Element("choice")
@@ -292,7 +292,9 @@ def _rewrite_block_to_tei_xml(xml: ET.Element):
         xml.extend(lines)
 
 
-def _concatenate_tei_xml_blocks(first: ET.Element, second: ET.Element, page_number: str):
+def _concatenate_tei_xml_blocks(
+    first: ET.Element, second: ET.Element, page_number: str
+):
     """Concatenate two blocks of TEI xml by updating the first block in-place.
 
     Use case: merging blocks across page breaks.

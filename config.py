@@ -91,6 +91,7 @@ class BaseConfig:
 
     # Cloud
     S3_BUCKET = _env("S3_BUCKET")
+    CLOUDFRONT_BASE_URL = _env("CLOUDFRONT_BASE_URL")
 
     # Vidyut extensions
     VIDYUT_DATA_DIR = _env("VIDYUT_DATA_DIR")

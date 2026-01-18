@@ -22,6 +22,8 @@ from ambuda.tasks.text_exports import create_text_export_inner
 from ambuda.utils import text_exports
 from ambuda.utils.text_exports import ExportType
 from ambuda.tasks.utils import LocalTaskStatus
+from ambuda.utils.assets import get_page_image_filepath
+from ambuda.s3_utils import S3Path
 
 # Load environment variables from .env file
 load_dotenv()
@@ -156,6 +158,111 @@ def export_text(text_slug):
         )
 
     click.echo("All exports completed successfully.")
+
+
+@cli.command()
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be uploaded without actually uploading",
+)
+def upload_page_images(dry_run):
+    """Upload page images from local disk to S3.
+
+    Uploads each page image to s3://$S3_BUCKET/assets/pages/{page.uuid}
+    """
+    app_environment = os.getenv("FLASK_ENV")
+    if not app_environment:
+        raise click.ClickException("FLASK_ENV not found in .env file")
+
+    current_app = ambuda.create_app(app_environment)
+    with current_app.app_context():
+        s3_bucket = current_app.config.get("S3_BUCKET")
+        if not s3_bucket:
+            raise click.ClickException("S3_BUCKET not configured in environment")
+
+        upload_folder = current_app.config.get("UPLOAD_FOLDER")
+        if not upload_folder:
+            raise click.ClickException("UPLOAD_FOLDER not configured in environment")
+
+        with Session(engine) as session:
+            # Get all pages along with their project information
+            stmt = select(db.Page, db.Project).join(
+                db.Project, db.Page.project_id == db.Project.id
+            )
+            results = session.execute(stmt).all()
+
+            if not results:
+                click.echo("No pages found in the database.")
+                return
+
+            total_pages = len(results)
+            uploaded = 0
+            skipped_missing = 0
+            skipped_exists = 0
+
+            click.echo(f"Found {total_pages} pages to process.")
+            if dry_run:
+                click.echo("DRY RUN MODE - No files will be uploaded")
+            click.echo()
+
+            for idx, (page, project) in enumerate(results):
+                local_path = get_page_image_filepath(
+                    project_slug=project.slug,
+                    page_slug=page.slug,
+                    upload_folder=upload_folder,
+                )
+
+                if not local_path.exists():
+                    click.echo(
+                        f"[{idx}/{total_pages}] Skipping {project.slug}/{page.slug} - file not found locally"
+                    )
+                    skipped_missing += 1
+                    continue
+
+                # Build S3 path
+                s3_key = f"assets/pages/{page.uuid}.jpg"
+                s3_path = S3Path(bucket=s3_bucket, key=s3_key)
+
+                # Check if already exists in S3
+                if s3_path.exists():
+                    click.echo(
+                        f"[{idx}/{total_pages}] Skipping {project.slug}/{page.slug} - already exists in S3"
+                    )
+                    skipped_exists += 1
+                    continue
+
+                if dry_run:
+                    click.echo(
+                        f"[{idx}/{total_pages}] Would upload {local_path} -> {s3_path}"
+                    )
+                    uploaded += 1
+                else:
+                    # Upload to S3
+                    try:
+                        s3_path.upload_file(local_path)
+                        click.echo(
+                            f"[{idx}/{total_pages}] Uploaded {project.slug}/{page.slug} -> {s3_path}"
+                        )
+                        uploaded += 1
+                    except Exception as e:
+                        click.echo(
+                            f"[{idx}/{total_pages}] ERROR uploading {project.slug}/{page.slug}: {e}",
+                            err=True,
+                        )
+
+            # Summary
+            click.echo()
+            click.echo("=" * 50)
+            click.echo("Summary:")
+            click.echo(f"  Total pages: {total_pages}")
+            if dry_run:
+                click.echo(f"  Would upload: {uploaded}")
+            else:
+                click.echo(f"  Uploaded: {uploaded}")
+            click.echo(f"  Skipped (missing locally): {skipped_missing}")
+            click.echo(f"  Skipped (already in S3): {skipped_exists}")
+            click.echo("=" * 50)
 
 
 if __name__ == "__main__":

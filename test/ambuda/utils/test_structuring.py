@@ -100,7 +100,10 @@ def test_validate_page_xml(input, expected):
         # Fix alone --> supplied (no corr)
         ("<p>foo<fix>bar</fix></p>", "<p>foo<supplied>bar</supplied></p>"),
         # Separate fix and error -- don't group into a single choice
-        ("<p>foo<error>bar</error> biz <fix>baf</fix> tail</p>", "<p>foo<choice><sic>bar</sic><corr /></choice> biz <supplied>baf</supplied> tail</p>"),
+        (
+            "<p>foo<error>bar</error> biz <fix>baf</fix> tail</p>",
+            "<p>foo<choice><sic>bar</sic><corr /></choice> biz <supplied>baf</supplied> tail</p>",
+        ),
         # <chaya>
         (
             "<p>aoeu<x>foo</x><chaya>asdf<y>bar</y></chaya></p>",
@@ -267,7 +270,9 @@ def test_from_content_and_page_id():
                     B(type="verse", content="a", n="1"),
                 ],
             ),
-            s.TEIBlock(xml='<lg n="1"><l>अ</l><pb n="-" /><l>a</l></lg>', slug="1", page_id=0),
+            s.TEIBlock(
+                xml='<lg n="1"><l>अ</l><pb n="-" /><l>a</l></lg>', slug="1", page_id=0
+            ),
         ),
         # Other
         (

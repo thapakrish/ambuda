@@ -50,7 +50,7 @@
         </td>
         <td class="border border-slate-300 p-2">
           <div class="flex gap-2 text-sm">
-            <a href="{{ url_for('proofing.tagging.text_tagging', text_slug=text.slug) }}" class="text-sky-900 hover:underline">{{ _('Tags') }}</a>
+            <a href="{{ url_for('proofing.tagging.text', text_slug=text.slug) }}" class="text-sky-900 hover:underline">{{ _('Tags') }}</a>
             <span class="text-slate-300">|</span>
             <a href="{{ url_for('texts.validate_text', slug=text.slug) }}" class="text-sky-900 hover:underline">{{ _('Report') }}</a>
           </div>

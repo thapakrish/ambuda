@@ -59,7 +59,7 @@ def index():
 
 
 @bp.route("/<text_slug>/tagging")
-def text_tagging(text_slug):
+def text(text_slug):
     """A text and its parse status."""
     text_ = q.text(text_slug)
     if text_ is None:
@@ -84,7 +84,7 @@ def text_tagging(text_slug):
 
 @bp.route("/<text_slug>/tagging/<section>", methods=["GET", "POST"])
 @p2_required
-def section_tagging(text_slug, section):
+def section(text_slug, section):
     db_text = q.text(text_slug)
     if db_text is None:
         abort(404)
@@ -97,9 +97,7 @@ def section_tagging(text_slug, section):
 
     if request.method == "POST":
         default = lambda: redirect(
-            url_for(
-                "proofing.tagging.section_tagging", text_slug=text_slug, section=section
-            )
+            url_for("proofing.tagging.section", text_slug=text_slug, section=section)
         )
         data = request.form.get("parse_data")
         if not data:
@@ -166,9 +164,7 @@ def section_tagging(text_slug, section):
             flash("No changes were made", "info")
 
         return redirect(
-            url_for(
-                "proofing.tagging.section_tagging", text_slug=text_slug, section=section
-            )
+            url_for("proofing.tagging.section", text_slug=text_slug, section=section)
         )
 
     blocks_in_section = []
@@ -246,14 +242,14 @@ def section_tagging(text_slug, section):
         if current_idx > 0:
             prev_section = sections_with_parse[current_idx - 1]
             prev_section_url = url_for(
-                "proofing.tagging.section_tagging",
+                "proofing.tagging.section",
                 text_slug=db_text.slug,
                 section=prev_section.slug,
             )
         if current_idx < len(sections_with_parse) - 1:
             next_section = sections_with_parse[current_idx + 1]
             next_section_url = url_for(
-                "proofing.tagging.section_tagging",
+                "proofing.tagging.section",
                 text_slug=db_text.slug,
                 section=next_section.slug,
             )
@@ -286,4 +282,4 @@ def batch_tag(text_slug):
     except Exception as e:
         flash(f"Error starting batch tagging: {e}", "error")
 
-    return redirect(url_for("proofing.tagging.text_tagging", text_slug=text_slug))
+    return redirect(url_for("proofing.tagging.text", text_slug=text_slug))
