@@ -297,6 +297,12 @@ export default () => ({
       return;
     }
 
+    // Igvore buttons.
+    const $button = e.target.closest('button');
+    if ($button) {
+      return;
+    }
+
     const $a = e.target.closest('a');
     if ($a) {
       // HACK for "show original" link inside block.
@@ -365,6 +371,42 @@ export default () => ({
       this.saveSettings();
       this.searchDictionary();
       this.showDictSourceSelector = false;
+    }
+  },
+
+  // Bookmark handlers
+  // =================
+
+  /** Toggle a bookmark on a text block. */
+  async toggleBookmark(blockSlug, event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+      const resp = await fetch('/api/bookmarks/toggle', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ block_slug: blockSlug }),
+      });
+
+      if (resp.ok) {
+        const data = await resp.json();
+        // TODO: Update UI to reflect bookmark state
+        // Could show a toast notification or update the bookmark icon
+        console.log(data.bookmarked ? 'Bookmarked' : 'Bookmark removed');
+      } else {
+        const error = await resp.json();
+        if (resp.status === 401) {
+          alert('Please log in to bookmark verses');
+        } else {
+          alert('Failed to toggle bookmark: ' + (error.error || 'Unknown error'));
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling bookmark:', error);
+      alert('Failed to toggle bookmark');
     }
   },
 });

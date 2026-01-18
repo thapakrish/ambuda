@@ -265,3 +265,24 @@ class TextExport(Base):
             return next(x for x in EXPORTS if x.matches(self.slug))
         except StopIteration:
             return None
+
+
+class TextBlockBookmark(Base):
+    """Bookmarks on a text."""
+
+    __tablename__ = "text_block_bookmarks"
+
+    #: The user that created this bookmark.
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    #: The block that the user has bookmarked.
+    block_id: Mapped[int] = mapped_column(
+        ForeignKey("text_blocks.id"), primary_key=True
+    )
+    #: When the bookmark was created.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+
+    #: Relationships
+    block = relationship("TextBlock", backref="bookmarks")
+    user = relationship("User", backref="bookmarks")

@@ -8,10 +8,12 @@ from flask import (
     Response,
     abort,
     jsonify,
+    request,
     render_template,
     url_for,
     send_file,
 )
+from flask_login import current_user, login_required
 from vidyut.lipi import transliterate, Scheme
 
 import ambuda.database as db
@@ -375,3 +377,43 @@ def reader_json(text_slug, section_slug):
         next_url=_make_section_url(text, next_),
     )
     return jsonify(data)
+
+
+@api.route("/bookmarks/toggle", methods=["POST"])
+def toggle_bookmark():
+    """Toggle a bookmark on a text block."""
+
+    if not current_user.is_authenticated:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    block_slug = data.get("block_slug")
+
+    if not block_slug:
+        return jsonify({"error": "block_slug is required"}), 400
+
+    session = q.get_session()
+
+    block = session.scalar(select(db.TextBlock).where(db.TextBlock.slug == block_slug))
+    if not block:
+        return jsonify({"error": "Block not found"}), 404
+
+    existing_bookmark = session.scalar(
+        select(db.TextBlockBookmark).where(
+            db.TextBlockBookmark.user_id == current_user.id,
+            db.TextBlockBookmark.block_id == block.id,
+        )
+    )
+
+    if existing_bookmark:
+        session.delete(existing_bookmark)
+        session.commit()
+        return jsonify({"bookmarked": False, "block_slug": block_slug})
+    else:
+        bookmark = db.TextBlockBookmark(
+            user_id=current_user.id,
+            block_id=block.id,
+        )
+        session.add(bookmark)
+        session.commit()
+        return jsonify({"bookmarked": True, "block_slug": block_slug})

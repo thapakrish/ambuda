@@ -1,0 +1,79 @@
+{% extends 'proofing/base.html' %}
+{% import "macros/components.html" as components %}
+{% import "macros/proofing.html" as m with context %}
+
+
+{% block title %}Bookmarks: {{ user.username }} | Ambuda{% endblock %}
+
+
+{% block content %}
+{% set url = url_for('user.summary', username=user.username) %}
+
+{{ components.flash_messages() }}
+{{ m.nested_header('Bookmarks', user.username, url) }}
+
+{{ m.user_tabs(user=user, active='bookmarks', is_mod=current_user.is_moderator) }}
+
+{% if bookmarks %}
+<div class="prose">
+  <p>You have {{ bookmarks|length }} bookmark{{ 's' if bookmarks|length != 1 }}.</p>
+</div>
+
+<div class="mt-8">
+  {% for bookmark in bookmarks %}
+  <div class="border-b py-4">
+    <div class="flex justify-between items-start">
+      <div class="flex-1">
+        <h3 class="text-lg font-semibold">
+          <a href="{{ url_for('texts.section', text_slug=bookmark.block.text.slug, section_slug=bookmark.block.section.slug) }}#{{ bookmark.block.slug }}"
+             class="hover:text-green-600">
+            {{ bookmark.block.text.title | devanagari }}
+          </a>
+        </h3>
+        <p class="text-sm text-gray-600">
+          {{ bookmark.block.section.title | devanagari }} &middot; {{ bookmark.block.slug }}
+        </p>
+        <p class="text-xs text-gray-400 mt-1">
+          Bookmarked {{ bookmark.created_at.strftime('%B %d, %Y') }}
+        </p>
+      </div>
+      <button class="text-red-600 hover:text-red-800 text-sm"
+              onclick="removeBookmark('{{ bookmark.block.slug }}')">
+        Remove
+      </button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+function removeBookmark(blockSlug) {
+  if (!confirm('Remove this bookmark?')) return;
+
+  fetch('/api/bookmarks/toggle', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ block_slug: blockSlug })
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (!data.bookmarked) {
+      // Reload the page to update the list
+      window.location.reload();
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Failed to remove bookmark');
+  });
+}
+</script>
+
+{% else %}
+<div class="prose">
+  <p>You don't have any bookmarks yet. Bookmark text blocks by clicking the bookmark icon when reading texts.</p>
+</div>
+{% endif %}
+{% endblock %}

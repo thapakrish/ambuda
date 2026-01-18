@@ -7,11 +7,32 @@ For the corresponding JavaScript bindings and logic, see `reader.js`.
 #}
 
 {% macro i_edit() %}
-<svg style="display: none" version="2.0"
+<svg style="display: none" version="2.0">
   <defs>
     <symbol id="edit" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-4">
       <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.262a1.75 1.75 0 0 0 0-2.474Z" />
       <path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9A.75.75 0 0 1 14 9v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
+    </symbol>
+  </defs>
+</svg>
+{% endmacro %}
+
+{% macro i_bookmark() %}
+<svg style="display: none" version="2.0">
+  <defs>
+    <symbol id="bookmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6">
+      <path fill-rule="evenodd" d="M6.32 2.577a49.255 49.255 0 0 1 11.36 0c1.497.174 2.57 1.46 2.57 2.93V21a.75.75 0 0 1-1.085.67L12 18.089l-7.165 3.583A.75.75 0 0 1 3.75 21V5.507c0-1.47 1.073-2.756 2.57-2.93Z" clip-rule="evenodd" />
+    </symbol
+  </defs>
+</svg>
+{% endmacro %}
+
+{% macro i_link() %}
+<svg style="display: none" version="2.0">
+  <defs>
+    <symbol id="link" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-4">
+      <path fill-rule="evenodd" d="M8.914 6.025a.75.75 0 0 1 1.06 0 3.5 3.5 0 0 1 0 4.95l-2 2a3.5 3.5 0 0 1-5.396-4.402.75.75 0 0 1 1.251.827 2 2 0 0 0 3.085 2.514l2-2a2 2 0 0 0 0-2.828.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+      <path fill-rule="evenodd" d="M7.086 9.975a.75.75 0 0 1-1.06 0 3.5 3.5 0 0 1 0-4.95l2-2a3.5 3.5 0 0 1 5.396 4.402.75.75 0 0 1-1.251-.827 2 2 0 0 0-3.085-2.514l-2 2a2 2 0 0 0 0 2.828.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" />
     </symbol>
   </defs>
 </svg>
@@ -209,6 +230,8 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
 
   {{ header() }}
   {{ i_edit() }}
+  {{ i_bookmark() }}
+  {{ i_link() }}
 
   {# Server-side logic. This will be hidden once the application loads. #}
   <div x-show="!data.blocks.length">
@@ -232,16 +255,42 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
       {% endfor %}
     {% endif %}   
 
-    <s-block data-slug="{{ block_.slug }}">
+    <s-block id="{{ block_.slug }}" data-slug="{{ block_.slug }}">
       <div class="flex items-start gap-2">
         <div class="mula flex-1">{{ block_.mula|safe }}</div>
-        {% if block_.page_url %}
-        <a href="{{ block_.page_url }}"
-           class="text-slate-400 hover:text-slate-600 flex-shrink-0 mt-1"
-           title="Edit in proofing interface">
-          <svg width="16" height="16"><use href="#edit"></use></svg>
-        </a>
-        {% endif %}
+        <div class="relative flex-shrink-0 mt-1 group" x-data="{ open: false }">
+          <button @click="open = !open"
+                  class="text-slate-400 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Block actions">
+            <span class="text-xs">&#x25BC;</span>
+          </button>
+          <div x-show="open"
+               @click.outside="open = false"
+               class="absolute right-0 mt-1 w-32 bg-white border rounded shadow-lg z-10"
+               x-cloak>
+            {% if block_.page_url %}
+            <a href="{{ block_.page_url }}"
+               class="block px-3 py-2 text-sm hover:bg-slate-100 flex items-center gap-2"
+               title="Edit in proofing interface">
+              <svg width="16" height="16"><use href="#edit"></use></svg>
+              <span>Edit</span>
+            </a>
+            {% endif %}
+            <a href="#{{ block_.slug }}"
+               class="block px-3 py-2 text-sm hover:bg-slate-100 flex items-center gap-2"
+               title="Link to this block">
+              <svg width="16" height="16"><use href="#link"></use></svg>
+              <span>Permalink</span>
+            </a>
+            <a href="#"
+               onclick="alert('Please enable JavaScript to bookmark verses'); return false;"
+               class="block px-3 py-2 text-sm hover:bg-slate-100 flex items-center gap-2"
+               title="Bookmark this block">
+              <svg width="16" height="16"><use href="#bookmark"></use></svg>
+              <span>Bookmark</span>
+            </a>
+          </div>
+        </div>
       </div>
     </s-block>
 
@@ -272,7 +321,7 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
       </template>
 
       {# Child blocks #}
-      <s-block :data-slug="b.slug">
+      <s-block :data-slug="b.slug" :id="b.slug" class="group">
         <div class="flex items-start gap-2">
           <div class="flex-1">
             <div :class="getBlockClasses(b)">
@@ -283,12 +332,38 @@ lg:top-10 is to vertically center the sidebar when sticky scrolling.
               <a @click.prevent="hideParse(b)" href="#" x-text="getParseLayoutTogglerText"></a>
             </span>
           </div>
-          <a x-show="b.page_url"
-             :href="b.page_url"
-             class="text-slate-400 hover:text-slate-600 flex-shrink-0 mt-1"
-             title="Edit in proofing interface">
-            <svg width="16" height="16"><use href="#edit"></use></svg>
-          </a>
+          <div class="relative flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" x-data="{ open: false }">
+            <button @click="open = !open"
+                    class="text-slate-400 hover:text-slate-600"
+                    title="Block actions">
+              <span class="text-xs">&#x25BC;</span>
+            </button>
+            <div x-show="open"
+                 @click.outside="open = false"
+                 class="absolute right-0 mt-1 w-32 bg-white border rounded shadow-lg z-10"
+                 x-cloak>
+              <a x-show="b.page_url"
+                 :href="b.page_url"
+                 class="block px-3 py-2 text-sm hover:bg-slate-100 flex items-center gap-2"
+                 title="Edit in proofing interface">
+                <svg width="16" height="16"><use href="#edit"></use></svg>
+                <span>Edit</span>
+              </a>
+              <a :href="'#' + b.slug"
+                 class="block px-3 py-2 text-sm hover:bg-slate-100 flex items-center gap-2"
+                 title="Link to this block">
+                <svg width="16" height="16"><use href="#link"></use></svg>
+                <span>Permalink</span>
+              </a>
+              <a href="#"
+                 @click="toggleBookmark(b.slug, $event)"
+                 class="block px-3 py-2 text-sm hover:bg-slate-100 flex items-center gap-2"
+                 title="Bookmark this block">
+                <svg width="16" height="16"><use href="#bookmark"></use></svg>
+                <span>Bookmark</span>
+              </a>
+            </div>
+          </div>
         </div>
       </s-block>
     </div>

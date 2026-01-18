@@ -114,6 +114,41 @@ def _make_role_form(roles, user_):
     return RolesForm()
 
 
+@bp.route("/<username>/bookmarks")
+@login_required
+def bookmarks(username):
+    """Show the user's bookmarked text blocks."""
+    user_ = q.user(username)
+    if not user_:
+        abort(404)
+
+    # Only this user can view their bookmarks
+    if username != current_user.username:
+        abort(403)
+
+    session = q.get_session()
+    stmt = (
+        select(db.TextBlockBookmark)
+        .options(
+            orm.joinedload(db.TextBlockBookmark.block)
+            .joinedload(db.TextBlock.text)
+            .load_only(db.Text.id, db.Text.slug, db.Text.title),
+            orm.joinedload(db.TextBlockBookmark.block)
+            .joinedload(db.TextBlock.section)
+            .load_only(db.TextSection.id, db.TextSection.slug, db.TextSection.title),
+        )
+        .filter_by(user_id=user_.id)
+        .order_by(db.TextBlockBookmark.created_at.desc())
+    )
+    user_bookmarks = list(session.scalars(stmt).all())
+
+    return render_template(
+        "proofing/user/bookmarks.html",
+        user=user_,
+        bookmarks=user_bookmarks,
+    )
+
+
 @bp.route("/<username>/admin", methods=["GET", "POST"])
 @moderator_required
 def admin(username):
