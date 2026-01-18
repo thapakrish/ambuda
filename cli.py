@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import asyncio
 import getpass
 import os
 from pathlib import Path
@@ -160,16 +161,132 @@ def export_text(text_slug):
     click.echo("All exports completed successfully.")
 
 
+async def _upload_page_async(
+    idx, page, project, s3_bucket, upload_folder, total_pages, dry_run, semaphore
+):
+    """Upload a single page image to S3 (async)."""
+    async with semaphore:
+        # Run blocking I/O operations in thread pool
+        local_path = await asyncio.to_thread(
+            get_page_image_filepath,
+            project_slug=project.slug,
+            page_slug=page.slug,
+            upload_folder=upload_folder,
+        )
+
+        # Check if file exists
+        exists = await asyncio.to_thread(local_path.exists)
+        if not exists:
+            return (
+                "skipped_missing",
+                f"[{idx}/{total_pages}] Skipping {project.slug}/{page.slug} - file not found locally",
+            )
+
+        # Build S3 path
+        s3_key = f"assets/pages/{page.uuid}.jpg"
+        s3_path = S3Path(bucket=s3_bucket, key=s3_key)
+
+        # Check if already exists in S3
+        s3_exists = await asyncio.to_thread(s3_path.exists)
+        if s3_exists:
+            return (
+                "skipped_exists",
+                f"[{idx}/{total_pages}] Skipping {project.slug}/{page.slug} - already exists in S3",
+            )
+
+        if dry_run:
+            return (
+                "uploaded",
+                f"[{idx}/{total_pages}] Would upload {local_path} -> {s3_path}",
+            )
+        else:
+            # Upload to S3
+            try:
+                await asyncio.to_thread(s3_path.upload_file, local_path)
+                return (
+                    "uploaded",
+                    f"[{idx}/{total_pages}] Uploaded {project.slug}/{page.slug} -> {s3_path}",
+                )
+            except Exception as e:
+                return (
+                    "error",
+                    f"[{idx}/{total_pages}] ERROR uploading {project.slug}/{page.slug}: {e}",
+                )
+
+
+async def _upload_all_pages_async(results, s3_bucket, upload_folder, dry_run, workers):
+    """Process all page uploads concurrently."""
+    total_pages = len(results)
+
+    # Counters (no locks needed - asyncio is single-threaded)
+    uploaded = 0
+    skipped_missing = 0
+    skipped_exists = 0
+    errors = 0
+
+    # Semaphore to limit concurrency
+    semaphore = asyncio.Semaphore(workers)
+
+    # Create all tasks
+    tasks = [
+        _upload_page_async(
+            idx,
+            page,
+            project,
+            s3_bucket,
+            upload_folder,
+            total_pages,
+            dry_run,
+            semaphore,
+        )
+        for idx, (page, project) in enumerate(results, 1)
+    ]
+
+    # Process tasks as they complete
+    completed = 0
+    for coro in asyncio.as_completed(tasks):
+        status, message = await coro
+        completed += 1
+
+        # Update counters
+        if status == "uploaded":
+            uploaded += 1
+        elif status == "skipped_missing":
+            skipped_missing += 1
+        elif status == "skipped_exists":
+            skipped_exists += 1
+        elif status == "error":
+            errors += 1
+
+        # Show progress periodically or for important messages
+        if (
+            completed % 100 == 0
+            or completed == total_pages
+            or "ERROR" in message
+            or "Would upload" in message
+        ):
+            click.echo(message)
+
+    return uploaded, skipped_missing, skipped_exists, errors
+
+
 @cli.command()
 @click.option(
     "--dry-run",
     is_flag=True,
     help="Show what would be uploaded without actually uploading",
 )
-def upload_page_images(dry_run):
+@click.option(
+    "--workers",
+    type=int,
+    default=10,
+    help="Number of concurrent uploads (default: 10)",
+)
+def upload_page_images(dry_run, workers):
     """Upload page images from local disk to S3.
 
     Uploads each page image to s3://$S3_BUCKET/assets/pages/{page.uuid}
+    Uses async I/O for efficient concurrent uploads.
     """
     app_environment = os.getenv("FLASK_ENV")
     if not app_environment:
@@ -197,59 +314,19 @@ def upload_page_images(dry_run):
                 return
 
             total_pages = len(results)
-            uploaded = 0
-            skipped_missing = 0
-            skipped_exists = 0
 
             click.echo(f"Found {total_pages} pages to process.")
             if dry_run:
                 click.echo("DRY RUN MODE - No files will be uploaded")
+            click.echo(f"Using {workers} concurrent uploads")
             click.echo()
 
-            for idx, (page, project) in enumerate(results):
-                local_path = get_page_image_filepath(
-                    project_slug=project.slug,
-                    page_slug=page.slug,
-                    upload_folder=upload_folder,
+            # Run async upload process
+            uploaded, skipped_missing, skipped_exists, errors = asyncio.run(
+                _upload_all_pages_async(
+                    results, s3_bucket, upload_folder, dry_run, workers
                 )
-
-                if not local_path.exists():
-                    click.echo(
-                        f"[{idx}/{total_pages}] Skipping {project.slug}/{page.slug} - file not found locally"
-                    )
-                    skipped_missing += 1
-                    continue
-
-                # Build S3 path
-                s3_key = f"assets/pages/{page.uuid}.jpg"
-                s3_path = S3Path(bucket=s3_bucket, key=s3_key)
-
-                # Check if already exists in S3
-                if s3_path.exists():
-                    click.echo(
-                        f"[{idx}/{total_pages}] Skipping {project.slug}/{page.slug} - already exists in S3"
-                    )
-                    skipped_exists += 1
-                    continue
-
-                if dry_run:
-                    click.echo(
-                        f"[{idx}/{total_pages}] Would upload {local_path} -> {s3_path}"
-                    )
-                    uploaded += 1
-                else:
-                    # Upload to S3
-                    try:
-                        s3_path.upload_file(local_path)
-                        click.echo(
-                            f"[{idx}/{total_pages}] Uploaded {project.slug}/{page.slug} -> {s3_path}"
-                        )
-                        uploaded += 1
-                    except Exception as e:
-                        click.echo(
-                            f"[{idx}/{total_pages}] ERROR uploading {project.slug}/{page.slug}: {e}",
-                            err=True,
-                        )
+            )
 
             # Summary
             click.echo()
@@ -262,6 +339,8 @@ def upload_page_images(dry_run):
                 click.echo(f"  Uploaded: {uploaded}")
             click.echo(f"  Skipped (missing locally): {skipped_missing}")
             click.echo(f"  Skipped (already in S3): {skipped_exists}")
+            if errors > 0:
+                click.echo(f"  Errors: {errors}")
             click.echo("=" * 50)
 
 
