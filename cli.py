@@ -15,8 +15,7 @@ from ambuda import database as db
 from ambuda import queries as q
 from ambuda.seed.utils.data_utils import create_db
 from ambuda.tasks.projects import (
-    create_project_inner,
-    move_project_pdf_to_s3_inner,
+    create_project_from_local_pdf_inner,
 )
 from ambuda.tasks.text_exports import create_text_export_inner
 from ambuda.utils import text_exports
@@ -107,15 +106,9 @@ def create_project(title, pdf_path):
                 "Please create a user first with `create-user`."
             )
 
-        slug = slugify(title)
-        page_image_dir = (
-            Path(current_app.config["UPLOAD_FOLDER"]) / "projects" / slug / "pages"
-        )
-        page_image_dir.mkdir(parents=True, exist_ok=True)
-        create_project_inner(
-            title=title,
+        create_project_from_local_pdf_inner(
             pdf_path=pdf_path,
-            output_dir=str(page_image_dir),
+            display_title=title,
             app_environment=current_app.config["AMBUDA_ENVIRONMENT"],
             creator_id=arbitrary_user.id,
             task_status=LocalTaskStatus(),

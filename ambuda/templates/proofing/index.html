@@ -18,21 +18,26 @@
 {% endmacro %}
 
 
-{% block title %}{{ mc.title(_('Ongoing projects')) }}{% endblock %}
+{% block title %}{{ mc.title(_('Projects')) }}{% endblock %}
 
 
 {% block content %}
 <div class="mb-4">
   <div class="flex justify-between items-baseline mb-2">
     <div class="prose">
-      <h1 class="md:!mt-0">{{ _('Ongoing projects') }}</h1>
+      <h1 class="md:!mt-0">{{ _('Projects') }}</h1>
     </div>
     {% if current_user.is_p2 %}
-    <a href="{{ url_for('proofing.create_project') }}" class="btn px-4 py-2 bg-sky-900 text-white border-2 border-sky-900 hover:bg-white hover:text-sky-900 transition font-semibold rounded shadow">{{ _('Add project') }}</a>
+    <a href="{{ url_for('proofing.create_project') }}"
+      class="btn px-4 py-2 bg-sky-900 text-white hover:bg-white hover:text-sky-900 transition font-semibold rounded shadow">
+      {{ _('Create project') }}
+    </a>
     {% endif %}
   </div>
-  <div class="flex gap-4 text-sm">
-    <a href="{{ url_for('proofing.texts') }}" class="text-sky-900 hover:underline">{{ _('View published texts') }} &rarr;</a>
+
+  {{ m.proofing_tabs('projects') }}
+
+  <div class="flex gap-4 text-sm mb-4">
     <a href="{{ url_for('proofing.recent_changes') }}" class="text-sky-900 hover:underline">{{ _('Recent changes') }} &rarr;</a>
   </div>
 </div>

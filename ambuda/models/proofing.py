@@ -10,6 +10,7 @@ from sqlalchemy import Text as Text_
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 from ambuda.models.base import Base, foreign_key, pk, same_as
+from ambuda.s3_utils import S3Path
 
 
 def string():
@@ -103,7 +104,7 @@ class Project(Base):
     uuid = Column(String, unique=True, nullable=False, default=_create_uuid)
 
     #: Human-readable title, which we show on the page.
-    display_title = Column(String, nullable=False)
+    display_title: Mapped[str] = mapped_column(String, nullable=False)
 
     #: The full book title as it appears in print.
     print_title = string()
@@ -164,6 +165,9 @@ class Project(Base):
 
     def __str__(self):
         return self.slug
+
+    def s3_path(self, bucket: str) -> S3Path:
+        return S3Path(bucket=bucket, key=f"proofing/{self.uuid}/pdf/source.pdf")
 
 
 class ProjectTag(Base):
@@ -252,6 +256,9 @@ class Page(Base):
 
     def __str__(self) -> str:
         return self.slug
+
+    def s3_path(self, bucket: str) -> S3Path:
+        return S3Path(bucket=bucket, key=f"assets/pages/{self.uuid}.jpg")
 
 
 class PageStatus(Base):

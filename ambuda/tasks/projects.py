@@ -3,11 +3,14 @@
 import logging
 import uuid
 import os
-import urllib.request
-import urllib.parse
 import json
 import re
+import hashlib
+import tempfile
+from datetime import datetime
 from pathlib import Path
+
+import requests
 
 # NOTE: `fitz` is the internal package name for PyMuPDF. PyPI hosts another
 # package called `fitz` (https://pypi.org/project/fitz/) that is completely
@@ -24,33 +27,40 @@ from ambuda.tasks.utils import CeleryTaskStatus, TaskStatus, get_db_session
 
 def _split_pdf_into_pages(
     pdf_path: Path, output_dir: Path, task_status: TaskStatus
-) -> int:
+) -> list[str]:
     """Split the given PDF into N .jpg images, one image per page.
 
     :param pdf_path: filesystem path to the PDF we should process.
     :param output_dir: the directory to which we'll write these images.
-    :return: the page count, which we use downstream.
+    :return: a list of UUIDs for each page, in order.
     """
     doc = fitz.open(pdf_path)
     task_status.progress(0, doc.page_count)
+    page_uuids = []
+
     for page in doc:
         n = page.number + 1
+        # Generate a unique UUID for this page
+        page_uuid = str(uuid.uuid4())
+        page_uuids.append(page_uuid)
+
         pix = page.get_pixmap(dpi=200)
-        output_path = output_dir / f"{n}.jpg"
+        output_path = output_dir / f"{page_uuid}.jpg"
         pix.pil_save(output_path, optimize=True)
         task_status.progress(n, doc.page_count)
-    return doc.page_count
+
+    return page_uuids
 
 
 def _add_project_to_database(
-    session, display_title: str, slug: str, num_pages: int, creator_id: int
+    session, display_title: str, slug: str, page_uuids: list[str], creator_id: int
 ):
     """Create a project on the database.
 
     :param session: database session
     :param display_title: the project title
     :param slug: the project slug
-    :param num_pages: the number of pages in the project
+    :param page_uuids: list of UUIDs for each page, in order
     :param creator_id: the user ID of the creator
     """
 
@@ -68,12 +78,14 @@ def _add_project_to_database(
     stmt = select(db.PageStatus).filter_by(name="reviewed-0")
     unreviewed = session.scalars(stmt).one()
 
+    num_pages = len(page_uuids)
     logging.info(f"Creating {num_pages} Page entries (slug = {slug}) ...")
-    for n in range(1, num_pages + 1):
+    for n, page_uuid in enumerate(page_uuids, start=1):
         session.add(
             db.Page(
                 project_id=project.id,
                 slug=str(n),
+                uuid=page_uuid,
                 order=n,
                 status_id=unreviewed.id,
             )
@@ -81,37 +93,36 @@ def _add_project_to_database(
     session.commit()
 
 
-def create_project_inner(
+def create_project_from_local_pdf_inner(
     *,
-    display_title: str,
-    pdf_path: str = None,
-    pdf_url: str = None,
-    output_dir: str = None,
-    upload_folder: str = None,
+    pdf_path: str,
+    display_title: str | None = None,
     app_environment: str,
     creator_id: int,
     task_status: TaskStatus,
     engine=None,
 ):
-    """Split the given PDF into pages and register the project on the database.
+    """Split a local PDF into pages and register the project on the database.
 
-    We separate this function from `create_project` so that we can run this
+    We separate this function from `create_project_from_local_pdf` so that we can run this
     function in a non-Celery context (for example, in `cli.py`).
 
-    :param display_title: the project's title.
-    :param pdf_path: local path to the source PDF (for local uploads).
-    :param pdf_url: URL to download PDF from (for URL uploads).
-    :param output_dir: local path where page images will be stored.
-    :param upload_folder: base upload folder (required for URL uploads).
+    :param pdf_path: local path to the source PDF.
+    :param display_title: optional custom display title for the project.
     :param app_environment: the app environment, e.g. `"development"`.
     :param creator_id: the user that created this project.
     :param task_status: tracks progress on the task.
     :param engine: optional SQLAlchemy engine. Tests should pass this to share
                    the same :memory: database.
     """
-    logging.info(f'Received upload task "{display_title}".')
 
-    # Tasks must be idempotent. Exit if the project already exists.
+    if not display_title:
+        with open(pdf_path, "rb") as f:
+            file_hash = hashlib.sha256(f.read()).hexdigest()
+        timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        hash_prefix = file_hash[:12]
+        display_title = f"Project {hash_prefix} ({timestamp})"
+
     with get_db_session(app_environment, engine=engine) as (session, query, config_obj):
         slug = slugify(display_title)
         stmt = select(db.Project).filter_by(slug=slug)
@@ -122,128 +133,160 @@ def create_project_inner(
                 f'Project "{display_title}" already exists. Please choose a different title.'
             )
 
-        # Handle URL-based uploads
-        if pdf_url:
-            if not upload_folder:
-                raise ValueError("upload_folder is required for URL-based uploads.")
-
-            # Create all directories for this project
-            project_dir = Path(upload_folder) / "projects" / slug
-            pdf_dir = project_dir / "pdf"
-            pages_dir = project_dir / "pages"
-            pdf_dir.mkdir(parents=True, exist_ok=True)
+        upload_folder = getattr(config_obj, "UPLOAD_FOLDER", None)
+        if upload_folder:
+            pages_dir = Path(upload_folder) / "pages"
             pages_dir.mkdir(parents=True, exist_ok=True)
-
-            # Download the PDF from the URL
-            pdf_path = pdf_dir / "source.pdf"
-            logging.info(f"Downloading PDF from {pdf_url}...")
-            try:
-                urllib.request.urlretrieve(pdf_url, pdf_path)
-            except Exception as e:
-                raise ValueError(f"Failed to download PDF from URL: {e}")
-
-            # Validate that the downloaded file is a PDF
-            if not pdf_path.suffix == ".pdf":
-                pdf_path.unlink()  # Remove the downloaded file
-                raise ValueError("The URL does not point to a valid PDF file.")
         else:
-            # Local file upload path
-            if not pdf_path or not output_dir:
-                raise ValueError(
-                    "pdf_path and output_dir are required for local uploads."
-                )
+            pages_dir = Path(tempfile.mkdtemp(prefix=f"ambuda_pages_{slug}_"))
 
-            pdf_path = Path(pdf_path)
-            pages_dir = Path(output_dir)
-
-        num_pages = _split_pdf_into_pages(Path(pdf_path), Path(pages_dir), task_status)
+        page_uuids = _split_pdf_into_pages(Path(pdf_path), pages_dir, task_status)
 
         _add_project_to_database(
             session=session,
             display_title=display_title,
             slug=slug,
-            num_pages=num_pages,
+            page_uuids=page_uuids,
             creator_id=creator_id,
         )
 
-        move_project_pdf_to_s3_inner(
-            session=session,
-            config_obj=config_obj,
-            project_slug=slug,
-            pdf_path=str(pdf_path),
-        )
+        # Move assets to s3.
+        project = session.scalars(stmt).first()
+        if not project:
+            raise ValueError(f"Could not create project {display_title}")
 
-    task_status.success(num_pages, slug)
+        s3_bucket = config_obj.S3_BUCKET
+        if s3_bucket:
+            s3_dest = project.s3_path(s3_bucket)
+            if s3_dest.exists():
+                logging.info(f"S3 path {s3_dest} already exists.")
+            else:
+                s3_dest.upload_file(pdf_path)
+                logging.info(f"Uploaded {project.id} PDF path to {s3_dest}.")
+
+            Path(pdf_path).unlink()
+            logging.info(f"Removed local file {pdf_path}.")
+
+            pages_dir = Path(pages_dir)
+            logging.info(f"Uploading {len(page_uuids)} page images to S3...")
+
+            stmt = select(db.Page).filter_by(project_id=project.id)
+            pages = session.scalars(stmt).all()
+            page_map = {page.uuid: page for page in pages}
+
+            for page_uuid in page_uuids:
+                local_page_path = pages_dir / f"{page_uuid}.jpg"
+                if not local_page_path.exists():
+                    logging.warning(f"Page image not found: {local_page_path}")
+                    continue
+
+                page = page_map.get(page_uuid)
+                if not page:
+                    logging.warning(f"Page with UUID {page_uuid} not found in database")
+                    continue
+
+                s3_page_path = page.s3_path(s3_bucket)
+                if s3_page_path.exists():
+                    logging.info(f"Page {page_uuid} already exists in S3, skipping.")
+                else:
+                    s3_page_path.upload_file(str(local_page_path))
+                    logging.info(f"Uploaded page {page_uuid} to {s3_page_path}.")
+
+                local_page_path.unlink()
+
+            logging.info(f"Finished uploading page images to S3.")
+        else:
+            logging.info(f"No s3 bucket found")
+
+    task_status.success(len(page_uuids), slug)
 
 
 @app.task(bind=True)
-def create_project(
+def create_project_from_local_pdf(
     self,
     *,
-    display_title: str,
-    pdf_path: str = None,
-    pdf_url: str = None,
-    output_dir: str = None,
-    upload_folder: str = None,
-    app_environment: str,
+    pdf_path: str,
+    display_title: str | None = None,
     creator_id: int,
+    app_environment: str,
 ):
-    """Split the given PDF into pages and register the project on the database.
+    """Split a local PDF into pages and register the project on the database.
 
-    For argument details, see `create_project_inner`.
+    For argument details, see `create_project_from_local_pdf_inner`.
     """
     task_status = CeleryTaskStatus(self)
-    create_project_inner(
-        display_title=display_title,
+    create_project_from_local_pdf_inner(
         pdf_path=pdf_path,
-        pdf_url=pdf_url,
-        output_dir=output_dir,
-        upload_folder=upload_folder,
-        app_environment=app_environment,
+        display_title=display_title,
         creator_id=creator_id,
         task_status=task_status,
+        app_environment=app_environment,
     )
 
 
-def move_project_pdf_to_s3_inner(*, session, config_obj, project_slug, pdf_path):
-    """Temporary task to move project PDFs to S3.
+def create_project_from_url_inner(
+    *,
+    pdf_url: str,
+    display_title: str | None = None,
+    app_environment: str,
+    creator_id: int,
+    task_status: TaskStatus,
+    engine=None,
+):
+    """Download a PDF from URL and create a project.
 
-    :param session: database session
-    :param config_obj: config object
-    :param project_slug: the project slug
-    :param pdf_path: path to the PDF file
+    :param pdf_url: URL to download PDF from.
+    :param display_title: optional custom display title for the project.
+    :param app_environment: the app environment, e.g. `"development"`.
+    :param creator_id: the user that created this project.
+    :param task_status: tracks progress on the task.
+    :param engine: optional SQLAlchemy engine. Tests should pass this to share
+                   the same :memory: database.
     """
 
-    stmt = select(db.Project).filter_by(slug=project_slug)
-    project = session.scalars(stmt).first()
+    temp_dir = Path(tempfile.gettempdir())
+    temp_pdf_path = temp_dir / f"ambuda_pdf_{uuid.uuid4()}.pdf"
+    try:
+        logging.info(f"Downloading PDF from {pdf_url}...")
+        response = requests.get(pdf_url)
+        response.raise_for_status()
+        temp_pdf_path.write_bytes(response.content)
 
-    s3_bucket = config_obj.S3_BUCKET
-    if not s3_bucket:
-        logging.info(f"No s3 bucket found")
-        return
-
-    s3_dest = S3Path(bucket=s3_bucket, key=f"proofing/{project.uuid}/pdf/source.pdf")
-    if s3_dest.exists():
-        logging.info(f"S3 path {s3_dest} already exists.")
-        return
-
-    s3_dest.upload_file(pdf_path)
-    logging.info(f"Uploaded {project.id} PDF path to {s3_dest}.")
-
-    Path(pdf_path).unlink()
-    logging.info(f"Removed local file {pdf_path}.")
+        create_project_from_local_pdf_inner(
+            pdf_path=str(temp_pdf_path),
+            display_title=display_title,
+            app_environment=app_environment,
+            creator_id=creator_id,
+            task_status=task_status,
+            engine=engine,
+        )
+    except Exception as e:
+        if temp_pdf_path.exists():
+            temp_pdf_path.unlink()
+        raise ValueError(f"Failed to download PDF from URL: {e}")
 
 
 @app.task(bind=True)
-def move_project_pdf_to_s3(self, *, project_slug, pdf_path, app_environment):
-    """Temporary task to move project PDFs to S3."""
-    with get_db_session(app_environment) as (session, query, config_obj):
-        move_project_pdf_to_s3_inner(
-            session=session,
-            config_obj=config_obj,
-            project_slug=project_slug,
-            pdf_path=pdf_path,
-        )
+def create_project_from_url(
+    self,
+    *,
+    pdf_url: str,
+    display_title: str | None = None,
+    creator_id: int,
+    app_environment: str,
+):
+    """Download a PDF from URL and create a project.
+
+    For argument details, see `create_project_from_url_inner`.
+    """
+    task_status = CeleryTaskStatus(self)
+    create_project_from_url_inner(
+        pdf_url=pdf_url,
+        display_title=display_title,
+        creator_id=creator_id,
+        task_status=task_status,
+        app_environment=app_environment,
+    )
 
 
 def _extract_gdrive_folder_id(folder_url: str) -> str:
@@ -268,16 +311,18 @@ def _list_gdrive_folder_pdfs(folder_id: str, api_key: str = None):
     :return: List of dicts with 'id' and 'name' keys
     """
     if api_key:
-        # Use Google Drive API v3
-        query = urllib.parse.quote(
-            f"'{folder_id}' in parents and mimeType='application/pdf'"
-        )
-        url = f"https://www.googleapis.com/drive/v3/files?q={query}&key={api_key}&fields=files(id,name)"
+        url = "https://www.googleapis.com/drive/v3/files"
+        params = {
+            "q": f"'{folder_id}' in parents and mimeType='application/pdf'",
+            "key": api_key,
+            "fields": "files(id,name)",
+        }
 
         try:
-            with urllib.request.urlopen(url) as response:
-                data = json.loads(response.read())
-                return data.get("files", [])
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            return data.get("files", [])
         except Exception as e:
             logging.error(f"Failed to list files using API: {e}")
             raise ValueError(
@@ -357,13 +402,12 @@ def create_projects_from_gdrive_folder_inner(
 
             # Create project using the existing logic
             try:
-                create_project_inner(
-                    display_title=title,
+                create_project_from_url_inner(
                     pdf_url=download_url,
-                    upload_folder=upload_folder,
+                    display_title=title,
                     app_environment=app_environment,
                     creator_id=creator_id,
-                    task_status=TaskStatus(),  # Use a dummy status for individual projects
+                    task_status=TaskStatus(),
                     engine=engine,
                 )
                 created_projects.append(title)

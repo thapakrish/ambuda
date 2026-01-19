@@ -30,10 +30,9 @@ def test_create_project_inner(flask_app, s3_mocks):
         # Pass the Flask app's engine to share the same :memory: database
         engine = get_engine()
 
-        projects.create_project_inner(
+        projects.create_project_from_local_pdf_inner(
             display_title="Test cool project",
             pdf_path=f.name,
-            output_dir=flask_app.config["UPLOAD_FOLDER"],
             app_environment=flask_app.config["AMBUDA_ENVIRONMENT"],
             creator_id=1,
             task_status=ambuda.tasks.utils.LocalTaskStatus(),

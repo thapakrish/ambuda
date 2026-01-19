@@ -135,12 +135,12 @@ def _get_page_number(project_: db.Project, page_: db.Page) -> str:
 
 def _get_image_url(project: db.Project, page: db.Page) -> str:
     """Handler for getting the image URL (S3 migration in progress.)"""
-    CLOUDFRONT_BASE_URL = current_app.config.get("CLOUDFRONT_BASE_URL")
-    if current_app.debug or not CLOUDFRONT_BASE_URL:
+    if current_app.debug:
         return url_for(
             "site.page_image", project_slug=project.slug, page_slug=page.slug
         )
 
+    CLOUDFRONT_BASE_URL = current_app.config.get("CLOUDFRONT_BASE_URL")
     page_uuid = page.uuid
     s3_url = f"{CLOUDFRONT_BASE_URL}/pages/{page_uuid}.jpg"
     return s3_url
@@ -263,13 +263,24 @@ def edit_post(project_slug, page_slug):
 def page_image(project_slug, page_slug):
     """(Debug only) Serve an image from the filesystem.
 
-    In production, we serve images directly from nginx.
+    In production, we serve images directly from Cloudfront.
     """
     assert current_app.debug
-    image_path = get_page_image_filepath(
-        project_slug, page_slug, current_app.config["UPLOAD_FOLDER"]
-    )
-    return send_file(image_path)
+
+    project = q.project(project_slug)
+    if not project:
+        return None
+
+    page = q.page(project.id, page_slug)
+    if not page:
+        return None
+
+    s3_path = page.s3_path(current_app.config["S3_BUCKET"])
+    local_path = s3_path._debug_local_path()
+    if not local_path:
+        return None
+
+    return send_file(local_path)
 
 
 @bp.route("/<project_slug>/<page_slug>/history")

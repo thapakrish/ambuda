@@ -4,7 +4,7 @@ from datetime import datetime, UTC
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy import Text as Text_, event
-from sqlalchemy.orm import relationship, validates
+from sqlalchemy.orm import relationship, validates, Mapped, mapped_column
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from ambuda.models.base import Base, foreign_key, pk
@@ -19,11 +19,11 @@ class User(AmbudaUserMixin, Base):
     #: Primary key.
     id = pk()
     #: The user's username.
-    username = Column(String, nullable=False, unique=True)
+    username: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     #: The user's hashed password.
     password_hash = Column(String, nullable=False)
     #: The user's email.
-    email = Column(String, nullable=False, unique=True)
+    email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     #: Timestamp at which this user record was created.
     created_at = Column(
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False

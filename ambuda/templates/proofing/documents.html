@@ -1,0 +1,51 @@
+{% extends 'proofing/base.html' %}
+{% import "macros/components.html" as mc %}
+{% import "macros/proofing.html" as m %}
+
+{% block title %}{{ mc.title(_('Documents')) }}{% endblock %}
+
+
+{% block content %}
+<div class="mb-4">
+  <div class="flex justify-between items-baseline mb-2">
+    <div class="prose">
+      <h1 class="md:!mt-0">{{ _('Documents') }}</h1>
+    </div>
+    {% if current_user.is_p2 %}
+    <a href="{{ url_for('proofing.create_project') }}"
+      class="btn px-4 py-2 bg-sky-900 text-white hover:bg-white hover:text-sky-900 transition font-semibold rounded shadow">
+      {{ _('Create project') }}
+    </a>
+    {% endif %}
+  </div>
+
+  {{ m.proofing_tabs('documents') }}
+
+  <div class="flex gap-4 text-sm mb-4">
+    <a href="{{ url_for('proofing.recent_changes') }}" class="text-sky-900 hover:underline">{{ _('Recent changes') }} &rarr;</a>
+  </div>
+</div>
+
+{% if projects %}
+<ul class="space-y-2">
+  {% for p in projects %}
+  <li class="py-3 border-b border-gray-200">
+    <div class="flex justify-between items-center">
+      <a href="{{ url_for("proofing.project.summary", slug=p.slug) }}" class="text-sky-900 hover:underline font-medium">
+        {{ p.display_title }}
+      </a>
+      <span class="text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800">
+        {{ p.status }}
+      </span>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="prose">
+<p>There aren't any pending projects. <a href="{{ url_for('proofing.create_project') }}">
+    Create a new project to get started</a>.</p>
+</div>
+{% endif %}
+
+{% endblock %}

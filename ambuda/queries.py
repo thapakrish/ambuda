@@ -137,8 +137,17 @@ class Query:
             mapping[dict_slug].append(row)
         return mapping
 
-    def projects(self) -> list[db.Project]:
-        return list(self.session.scalars(select(db.Project)).all())
+    def active_projects(self) -> list[db.Project]:
+        from ambuda.models.proofing import ProjectStatus
+
+        stmt = select(db.Project).filter(db.Project.status == ProjectStatus.ACTIVE)
+        return list(self.session.scalars(stmt).all())
+
+    def pending_projects(self) -> list[db.Project]:
+        from ambuda.models.proofing import ProjectStatus
+
+        stmt = select(db.Project).filter(db.Project.status == ProjectStatus.PENDING)
+        return list(self.session.scalars(stmt).all())
 
     def project(self, slug: str) -> db.Project | None:
         stmt = select(db.Project).filter(db.Project.slug == slug)
@@ -300,10 +309,16 @@ def dict_entries(
     return query.dict_entries(sources, keys)
 
 
-def projects() -> list[db.Project]:
-    """Return all projects in no particular order."""
+def active_projects() -> list[db.Project]:
+    """Return all active projects in no particular order."""
     query = Query(get_session())
-    return query.projects()
+    return query.active_projects()
+
+
+def pending_projects() -> list[db.Project]:
+    """Return all pending projects in no particular order."""
+    query = Query(get_session())
+    return query.pending_projects()
 
 
 def project(slug: str) -> db.Project | None:

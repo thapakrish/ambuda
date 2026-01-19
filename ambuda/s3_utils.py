@@ -138,3 +138,14 @@ class S3Path:
 
     def delete(self):
         _get_client().delete_object(Bucket=self.bucket, Key=self.key)
+
+    def _debug_local_path(self) -> Path | None:
+        """(Debug only) Get the local path corresponding to this S3 path.
+
+        For production paths, this method always returns None.
+        """
+        client = _get_client()
+        if not isinstance(client, LocalFSBotoClient):
+            return None
+
+        return client._get_local_path(self.bucket, self.key)

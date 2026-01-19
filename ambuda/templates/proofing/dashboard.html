@@ -1,46 +1,46 @@
-{% extends 'proofing/base-sidebar.html' %}
+{% extends 'proofing/base.html' %}
 {% import "macros/components.html" as mc %}
 {% import "macros/proofing.html" as m %}
 
-
-{% macro _number(n, label) %}
-<li class="flex-1">
-  <div class="font-bold text-3xl">{{ n }}</div>
-  <div class="text-slate-500 text-sm">{{ label }}</div>
-</li>
-{% endmacro %}
-
-
-{% block title %}{{ mc.title(_('Dashboard')) }}{% endblock %}
-
-
-{% block sidebar %}{{ m.main_nav('projects', current_user=current_user) }}{% endblock %}
-
+{% block title %}{{ mc.title(_('Proofing Dashboard')) }}{% endblock %}
 
 {% block content %}
-{{ m.title_and_subtitle(
-    "Dashboard",
-    "A summary of our proofing work") }}
+<div class="mb-4">
+  <div class="prose mb-4">
+    <h1 class="md:!mt-0">{{ _('Proofing Dashboard') }}</h1>
+  </div>
 
-<div class="prose">
-<h2>Revisions</h2>
+  {{ m.proofing_tabs('dashboard') }}
 </div>
 
-<ul class="flex text-center justify-between">
-  {{ _number(num_revisions_30d, "Last 30 days") }}
-  {{ _number(num_revisions_7d, "Last 7 days") }}
-  {{ _number(num_revisions_1d, "Last 1 day") }}
-</ul>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+  <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+    <h2 class="text-2xl font-bold text-gray-900">{{ num_active_projects }}</h2>
+    <p class="text-gray-600 mt-1">{{ _('Active projects') }}</p>
+    <a href="{{ url_for('proofing.index') }}" class="text-sky-900 hover:underline text-sm mt-2 inline-block">{{ _('View all') }} &rarr;</a>
+  </div>
 
+  <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+    <h2 class="text-2xl font-bold text-gray-900">{{ num_pending_projects }}</h2>
+    <p class="text-gray-600 mt-1">{{ _('Pending documents') }}</p>
+    <a href="{{ url_for('proofing.documents') }}" class="text-sky-900 hover:underline text-sm mt-2 inline-block">{{ _('View all') }} &rarr;</a>
+  </div>
 
-<div class="prose">
-<h2>Contributors</h2>
+  <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+    <h2 class="text-2xl font-bold text-gray-900">{{ num_texts }}</h2>
+    <p class="text-gray-600 mt-1">{{ _('Published texts') }}</p>
+    <a href="{{ url_for('proofing.texts') }}" class="text-sky-900 hover:underline text-sm mt-2 inline-block">{{ _('View all') }} &rarr;</a>
+  </div>
 </div>
 
-<ul class="flex text-center justify-between">
-  {{ _number(num_contributors_30d, "Last 30 days") }}
-  {{ _number(num_contributors_7d, "Last 7 days") }}
-  {{ _number(num_contributors_1d, "Last 1 day") }}
-</ul>
+<div class="prose">
+  <h2>{{ _('Quick Links') }}</h2>
+  <ul>
+    <li><a href="{{ url_for('proofing.recent_changes') }}" class="text-sky-900 hover:underline">{{ _('Activity') }}</a></li>
+    {% if current_user.is_p2 %}
+    <li><a href="{{ url_for('proofing.create_project') }}" class="text-sky-900 hover:underline">{{ _('Create a new project') }}</a></li>
+    {% endif %}
+  </ul>
+</div>
 
 {% endblock %}

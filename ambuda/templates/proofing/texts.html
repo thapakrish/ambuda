@@ -1,12 +1,16 @@
 {% extends 'proofing/base.html' %}
 {% import "macros/components.html" as mc %}
+{% import "macros/proofing.html" as m %}
 
 {% block title %}{{ mc.title(_('Published Texts')) }}{% endblock %}
 
 {% block content %}
-<div class="prose mb-6">
-  <h1 class="md:!mt-0">{{ _('Published Texts') }}</h1>
-  <p class="text-slate-600">All texts published from proofing projects.</p>
+<div class="mb-4">
+  <div class="prose mb-4">
+    <h1 class="md:!mt-0">{{ _('Texts') }}</h1>
+  </div>
+
+  {{ m.proofing_tabs('texts') }}
 </div>
 
 {% if texts %}
