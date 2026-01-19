@@ -67,8 +67,33 @@
 
   /* Custom elements. */
 
+  .s-chaya {
+    @apply px-2 py-0.5 bg-sky-100 rounded;
+    @apply border-l-2 border-r-2 border-sky-600;
+  }
   s-block {
-    @apply block mb-4;
+    @apply block my-4;
+  }
+  s-speaker {
+    @apply block font-bold;
+  }
+  s-stage {
+    @apply italic text-slate-500;
+  }
+  s-trailer {
+    @apply block text-center;
+  }
+  s-sp s-p {
+    @apply pl-8;
+  }
+  s-sp s-lg {
+    @apply pl-16;
+  }
+  s-p {
+    @apply block;
+  }
+  s-sp s-p, s-sp s-lg {
+    @apply mt-4;
   }
   /* TEI <lg>, i.e. a Sanskrit verse. */
   s-lg {
@@ -160,7 +185,7 @@
   }
 
   /* Prosemirror mark CSS */
-  .pm-error, .pm-fix, .pm-flag, .pm-stage, .pm-speaker, .pm-chaya {
+  .pm-error, .pm-fix, .pm-flag, .pm-stage, .pm-speaker, .pm-chaya, .pm-prakrit {
     @apply border-b-2 pr-1;
   }
 
@@ -224,6 +249,15 @@
 
   .pm-chaya:before {
     content: "🌒 ";
+    @apply text-xs pl-1;
+  }
+
+  .pm-prakrit {
+    @apply bg-amber-100 border-amber-600;
+  }
+
+  .pm-prakrit:before {
+    content: "☀️ ";
     @apply text-xs pl-1;
   }
 

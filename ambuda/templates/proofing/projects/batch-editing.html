@@ -78,6 +78,8 @@
                 {{ help_item('text:MyText', 'text field equals') }}
                 {{ help_item('regex:[0-9]+', 'regex match content') }}
                 {{ help_item('contains:foo', 'substring in content') }}
+                {{ help_item('page:5', 'page number equals') }}
+                {{ help_item('page:1-10', 'page range (inclusive)') }}
                 {{ help_item('lang:sa type:paragraph', 'AND (space)') }}
                 {{ help_item('lang:sa OR lang:en', 'OR') }}
                 {{ help_item('NOT type:ignore', 'NOT') }}
@@ -609,7 +611,7 @@ function batchEdit() {
       return tokens;
     },
 
-    evalPredicate(pred, block) {
+    evalPredicate(pred, block, page) {
       const predicates = {
         lang: () => block.lang === pred.value,
         type: () => block.type === pred.value,
@@ -621,7 +623,27 @@ function batchEdit() {
             throw new Error(`Invalid regex: ${pred.value}`);
           }
         },
-        contains: () => (block.content || '').includes(pred.value)
+        contains: () => (block.content || '').includes(pred.value),
+        page: () => {
+          if (!page) return false;
+          const pageNum = parseInt(page.slug);
+          if (isNaN(pageNum)) return false;
+
+          // Check if it's a range (e.g., "1-10")
+          if (pred.value.includes('-')) {
+            const parts = pred.value.split('-');
+            if (parts.length !== 2) throw new Error(`Invalid page range: ${pred.value}`);
+            const start = parseInt(parts[0]);
+            const end = parseInt(parts[1]);
+            if (isNaN(start) || isNaN(end)) throw new Error(`Invalid page range: ${pred.value}`);
+            return pageNum >= start && pageNum <= end;
+          }
+
+          // Single page number
+          const targetPage = parseInt(pred.value);
+          if (isNaN(targetPage)) throw new Error(`Invalid page number: ${pred.value}`);
+          return pageNum === targetPage;
+        }
       };
 
       const fn = predicates[pred.key];
@@ -629,7 +651,7 @@ function batchEdit() {
       return fn();
     },
 
-    evalSelection(tokens, block) {
+    evalSelection(tokens, block, page) {
       if (tokens.length === 0) return true;
 
       let result = null;
@@ -647,18 +669,18 @@ function batchEdit() {
           if (!expectingOperand) {
             // Implicit AND
             if (result !== null) {
-              let predResult = this.evalPredicate(token, block);
+              let predResult = this.evalPredicate(token, block, page);
               if (negate) predResult = !predResult;
               result = result && predResult;
               negate = false;
             } else {
-              result = this.evalPredicate(token, block);
+              result = this.evalPredicate(token, block, page);
               if (negate) result = !result;
               negate = false;
             }
           } else {
             // After OR or at start
-            let predResult = this.evalPredicate(token, block);
+            let predResult = this.evalPredicate(token, block, page);
             if (negate) predResult = !predResult;
             if (result === null) {
               result = predResult;
@@ -734,7 +756,7 @@ function batchEdit() {
           let matchCount = 0;
           this.pages.forEach(page => {
             page.blocks.forEach(block => {
-              if (this.evalSelection(selectTokens, block)) {
+              if (this.evalSelection(selectTokens, block, page)) {
                 matchCount++;
               }
             });
@@ -762,7 +784,7 @@ function batchEdit() {
 
         this.pages.forEach(page => {
           page.blocks.forEach((block, blockIndex) => {
-            const matches = this.evalSelection(selectTokens, block);
+            const matches = this.evalSelection(selectTokens, block, page);
             if (!matches) return;
 
             const changes = {};

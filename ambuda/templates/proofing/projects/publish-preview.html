@@ -29,17 +29,19 @@
 {{ m.project_header_nested('Publish Preview', project) }}
 {{ m.project_tabs(project=project, active='publish', is_mod=current_user.is_moderator) }}
 
-<div class="prose max-w-none">
+<div class="max-w-none">
+  <div class="prose">
   <h2>Preview Changes</h2>
 
   <p>
     Review the changes that will be made when you publish. New texts will be created, and existing texts will be updated.
   </p>
+  </div>
 
   {% for preview in previews %}
   <div class="not-prose border border-slate-300 rounded p-4 mb-6">
     <div class="mb-4">
-      <h3 class="text-xl font-bold">
+      <h3 class="text-xl font-bold my-4">
         {{ preview.title }}
         {% if preview.is_new %}
         <span class="inline-block ml-2 px-2 py-1 text-xs font-semibold rounded bg-green-100 text-green-800">NEW</span>
@@ -87,7 +89,11 @@
             </span>
           </div>
           <pre class="diff-content text-sm font-mono whitespace-pre-wrap {% if diff.type == 'added' %}text-green-900{% elif diff.type == 'removed' %}text-red-900{% else %}text-slate-900{% endif %}">
-            {{- diff.diff|safe -}}
+            {%- if diff.type|upper == 'CHANGED' -%}
+              {{- diff.diff|safe -}}
+            {%- else -%}
+              {{- diff.diff -}}
+            {%- endif -%}
           </pre >
         </div>
         {% endfor %}

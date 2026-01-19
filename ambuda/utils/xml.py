@@ -272,24 +272,71 @@ tei_header_xml = {
     "ref": Rule("a", _rename({"target": "href"})),
 }
 
+
+def _handle_tei_p(el: ET.Element):
+    if el.tag == "p":
+        el.tag = "s-p"
+
+    # If <p> contains only a <stage>, center the stage.
+    if not el.text and len(el) == 1 and el[0].tag == "stage" and not el[0].tail:
+        el.attrib["class"] = "text-center"
+
+
+def _handle_tei_choice(el: ET.Element):
+    # choice between sic and corr -- always keep corr, toss sic.
+
+    # chaya
+    attr_lang = "{http://www.w3.org/XML/1998/namespace}lang"
+    if el.attrib.get("type") == "chaya":
+        for seg in el:
+            if seg.attrib.get(attr_lang) == "sa":
+                seg.attrib["class"] = "s-chaya"
+
+        print(ET.tostring(el, encoding="unicode"))
+    else:
+        # sic / corr -- taken care of, as <sic> is just deleted.
+        pass
+
+
+def _handle_tei_stage(el: ET.Element):
+    el.tag = "s-stage"
+    el.text = f"( {el.text or ''} )"
+
+
+def _handle_tei_seg(el: ET.Element):
+    el.tag = "span"
+
+
 # Defined against the TEI spec
+# TODO: footnote-ref, footnote, chaya
 tei_xml = {
-    # Header information
+    # Headers and trailers
+    "title": None,
+    "subtitle": None,
     "head": elem("h1"),
-    # A text section
+    "trailer": elem("s-trailer"),
+    # Section
     "div": elem("section"),
-    # A segment of text (e.g. a pāda).
-    "seg": elem("span"),
-    "hi": text(),
-    "note": None,
-    "orig": elem("span"),
-    # A verse (line group)
-    "lg": elem("s-lg", {}),
-    # A line break
-    "lb": elem("br"),
-    # A line
-    "l": elem("s-l"),
     "section": elem("section"),
+    # Standard block elements
+    "lg": elem("s-lg", {}),
+    "l": elem("s-l"),
+    "p": _handle_tei_p,
+    # Stages and speakers
+    "sp": elem("s-sp", {}),
+    "speaker": elem("s-speaker", {}, text_after=" —"),
+    "stage": _handle_tei_stage,
+    "lb": elem("br"),
+    # Inline elements
+    "choice": _handle_tei_choice,
+    "sic": None,
+    # A segment of text (e.g. a pāda).
+    "seg": _handle_tei_seg,
+    "hi": text(),
+    "orig": elem("span"),
+    # Footnotes (currently not supported.)
+    "note": None,
+    "ref": None,
 }
 
 

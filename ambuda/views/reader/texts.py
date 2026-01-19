@@ -301,6 +301,10 @@ def section(text_slug, section_slug):
                     )
                 )
 
+        # HACK: skip these for now.
+        if block.xml.startswith("<title") or block.xml.startswith("<subtitle"):
+            continue
+
         blocks.append(
             Block(
                 slug=block.slug,

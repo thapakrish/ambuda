@@ -237,6 +237,7 @@ def edit_post(project_slug, page_slug):
     is_r0 = cur.status.name == SitePageStatus.R0
     image_number = cur.slug
     page_number = _get_page_number(ctx.project, cur)
+    image_url = _get_image_url(ctx.project, cur)
 
     # Keep args in sync with `edit`. (We can't unify these functions easily
     # because one function requires login but the other doesn't. Helper
@@ -252,6 +253,7 @@ def edit_post(project_slug, page_slug):
         page_context=ctx,
         page_number=page_number,
         project=ctx.project,
+        image_url=image_url,
     )
 
 

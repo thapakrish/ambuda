@@ -39,6 +39,7 @@ from wtforms.validators import DataRequired, ValidationError
 from wtforms.widgets import TextArea
 from wtforms_sqlalchemy.fields import QuerySelectField
 
+import ambuda.utils.structuring as structuring_utils
 from ambuda import database as db
 from ambuda import queries as q
 from ambuda.models.proofing import ProjectStatus, PublishConfig, ProjectConfig
@@ -1064,7 +1065,7 @@ def publish_preview(slug):
 
     for config in project_config.publish:
         existing_text = text_map.get(config.slug)
-        document = _create_tei_document(project_, config.target)
+        document = _create_tei_document(project_, config.target or "()")
 
         new_blocks = [b.xml for section in document.sections for b in section.blocks]
         existing_blocks = []
@@ -1078,6 +1079,9 @@ def publish_preview(slug):
             new_xml = new_blocks[i] if i < len(new_blocks) else None
 
             if old_xml is None and new_xml is not None:
+                x = ET.fromstring(new_xml)
+                ET.indent(x, "  ")
+                new_xml = ET.tostring(x, encoding="unicode")
                 diffs.append(
                     {
                         "type": "added",
@@ -1136,9 +1140,10 @@ def _create_tei_document(project_, target: str) -> TEIDocument:
 
     rules = project_utils.parse_page_number_spec(project_.page_numbers)
     page_numbers = project_utils.apply_rules(len(project_.pages), rules)
-    proof_project = ProofProject.from_revisions(revisions)
-    doc, _errors = proof_project.to_tei_document(
-        target=target, page_numbers=page_numbers
+    doc, _errors = structuring_utils.create_tei_document(
+        revisions=revisions,
+        page_numbers=page_numbers,
+        target=target,
     )
     return doc
 

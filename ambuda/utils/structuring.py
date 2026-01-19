@@ -1,10 +1,12 @@
 """Utilities for manual text structuring."""
 
+import copy
 import dataclasses as dc
 import defusedxml.ElementTree as DET
 import re
 import xml.etree.ElementTree as ET
 from enum import StrEnum
+from typing import Iterable
 
 from ambuda import database as db
 
@@ -22,6 +24,7 @@ class BlockType(StrEnum):
     TITLE = "title"
     SUBTITLE = "subtitle"
     IGNORE = "ignore"
+    METADATA = "metadata"
 
 
 # Keep in sync with marks-config.ts::INLINE_MARKS
@@ -89,11 +92,95 @@ VALIDATION_SPECS = {
     BlockType.IGNORE: ValidationSpec(
         children=CORE_INLINE_TYPES, attrib={"lang", "text"}
     ),
+    BlockType.METADATA: ValidationSpec(children=set(), attrib=set()),
     **{
         tag: ValidationSpec(children=set(InlineType), attrib=set())
         for tag in InlineType
     },
 }
+
+
+@dc.dataclass
+class IndexedBlock:
+    # Database ID
+    page_id: int
+    # Database ID
+    revision_id: int
+    # 1-indexed
+    image_number: int
+    # 1-indexed
+    block_index: int
+    page_xml: ET.Element
+
+
+class Filter:
+    def __init__(self, sexp: str):
+        sexp = sexp.strip()
+        if not sexp:
+            return []
+        if not sexp.startswith("("):
+            raise ValueError("S-expression must start with '('")
+
+        i = 0
+
+        def parse_list():
+            nonlocal i
+            result = []
+            i += 1
+
+            while i < len(sexp):
+                while i < len(sexp) and sexp[i].isspace():
+                    i += 1
+
+                if i >= len(sexp):
+                    raise ValueError("Unexpected end of input")
+
+                if sexp[i] == ")":
+                    i += 1
+                    return result
+
+                if sexp[i] == "(":
+                    result.append(parse_list())
+                else:
+                    atom_start = i
+                    while i < len(sexp) and sexp[i] not in "() \t\n\r":
+                        i += 1
+                    atom = sexp[atom_start:i]
+                    result.append(atom)
+            raise ValueError("Missing closing parenthesis")
+
+        self.predicate = parse_list()
+
+    def matches(self, block: IndexedBlock) -> bool:
+        def _matches(sexp):
+            try:
+                key = sexp[0]
+                if key == "image":
+                    start = sexp[1]
+                    try:
+                        end = sexp[2]
+                        return int(start) <= block.image_number <= int(end)
+                    except IndexError:
+                        return block.image_number == int(start)
+                if key == "label":
+                    return (
+                        block.page_xml[block.block_index].attrib.get("text") == sexp[1]
+                    )
+                if key == "tag":
+                    return block.page_xml[block.block_index].tag == sexp[1]
+
+                if key == "and":
+                    return all(_matches(x) for x in sexp[1:])
+                if key == "or":
+                    return any(_matches(x) for x in sexp[1:])
+                if key == "not":
+                    return not _matches(sexp[1])
+                if key == "page":
+                    return int(sexp[1]) <= block.image_number <= int(sexp[2])
+            except Exception as e:
+                return False
+
+        return _matches(self.predicate)
 
 
 def validate_page_xml(content: str) -> list[ValidationResult]:
@@ -153,164 +240,6 @@ def _inner_xml(el):
     for child in el:
         buf.append(ET.tostring(child, encoding="unicode"))
     return "".join(buf)
-
-
-def _rewrite_block_to_tei_xml(xml: ET.Element):
-    # <speaker>
-    try:
-        speaker = next(x for x in xml if x.tag == "speaker")
-    except StopIteration:
-        speaker = None
-    if speaker is not None:
-        old_tag = xml.tag
-        old_attrib = xml.attrib
-        old_children = [x for x in xml if x.tag != "speaker"]
-
-        speaker_tail = speaker.tail or ""
-        speaker.tail = ""
-
-        xml.clear()
-        xml.tag = "sp"
-        xml.append(speaker)
-        if not old_children and not speaker_tail.strip():
-            # Special case: <p> contains only speaker, so don't create a child elem.
-            return
-
-        xml.append(ET.Element(old_tag))
-        xml[-1].attrib = old_attrib
-        xml[-1].text = (speaker_tail + (xml[-1].text or "")).strip()
-        xml[-1].extend(old_children)
-        _rewrite_block_to_tei_xml(xml[-1])
-        return
-
-    # <error> and <fix>
-    i = 0
-    while i < len(xml):
-        el = xml[i]
-        el_tail = (el.tail or "").strip()
-        if el.tag not in ("error", "fix"):
-            i += 1
-            continue
-
-        # Standardize order: <error> then <fix>
-        if i + 1 < len(xml):
-            el_next = xml[i + 1]
-            if (el.tag, el_next.tag) == ("fix", "error") and not el_tail:
-                # Normalize to avoid weird errors later.
-                el.tail = ""
-                xml[i], xml[i + 1] = el_next, el
-
-        # Reload since `el` may be stale after swap.
-        el = xml[i]
-        if el.tag == "error":
-            error = xml[i]
-            has_counterpart = i + 1 < len(xml) and not el_tail
-            maybe_fix = xml[i + 1] if has_counterpart else None
-
-            choice = ET.Element("choice")
-            sic = ET.SubElement(choice, "sic")
-            sic.text = el.text or ""
-            corr = ET.SubElement(choice, "corr")
-            if maybe_fix is not None:
-                corr.text = maybe_fix.text or ""
-                choice.tail = maybe_fix.tail
-                del xml[i + 1]
-            else:
-                choice.tail = error.tail
-            del xml[i]
-
-            xml.insert(i, choice)
-        elif el.tag == "fix":
-            # Edge case: <fix> without <error> is renamed to <supplied>.
-            el.tag = "supplied"
-
-        i += 1
-
-    tag_rename = {
-        "verse": "lg",
-        "heading": "head",
-    }
-    xml.tag = tag_rename.get(xml.tag, xml.tag)
-
-    # <p> text normalization
-    if xml.tag == "p":
-
-        def _normalize_text(xml):
-            xml.text = re.sub(r"-\n", "", xml.text or "", flags=re.M)
-            xml.text = re.sub(r"\s+", " ", xml.text, flags=re.M)
-            xml.tail = re.sub(r"-\n", "", xml.tail or "", flags=re.M)
-            xml.tail = re.sub(r"\s+", " ", xml.tail, flags=re.M)
-            for el in xml:
-                _normalize_text(el)
-
-        _normalize_text(xml)
-
-        # <chaya> is currently supported only for <p> elements.
-        try:
-            chaya = next(x for x in xml if x.tag == "chaya")
-        except StopIteration:
-            chaya = None
-        if chaya is not None:
-            choice = ET.Element("choice")
-            choice.attrib["type"] = "chaya"
-
-            prakrit = ET.SubElement(choice, "seg")
-            prakrit.attrib["xml:lang"] = "pra"
-            prakrit.text = xml.text
-            prakrit.extend(x for x in xml if x.tag != "chaya")
-
-            sanskrit = ET.SubElement(choice, "seg")
-            sanskrit.attrib["xml:lang"] = "sa"
-            sanskrit.text = chaya.text
-            sanskrit.extend(chaya)
-
-            xml.text = ""
-            del xml[:]
-            xml.append(choice)
-
-    # <verse> line splitting
-    if xml.tag == "lg":
-        lines = []
-        for fragment in (xml.text or "").strip().splitlines():
-            line = ET.Element("l")
-            line.text = fragment
-            lines.append(line)
-
-        for el in xml:
-            if not lines:
-                lines.append(ET.Element("l"))
-            lines[-1].append(el)
-            for i, fragment in enumerate((el.tail or "").strip().splitlines()):
-                if i == 0:
-                    el.tail = fragment
-                else:
-                    lines.append(ET.Element("l"))
-                    lines[-1].text = fragment
-
-        xml.text = ""
-        xml.clear()
-        xml.extend(lines)
-
-
-def _concatenate_tei_xml_blocks(
-    first: ET.Element, second: ET.Element, page_number: str
-):
-    """Concatenate two blocks of TEI xml by updating the first block in-place.
-
-    Use case: merging blocks across page breaks.
-    """
-    if first.tag == "sp":
-        # Special case for <sp>: concatenate children, leaving speaker alone.
-        assert len(first) == 2
-        _concatenate_tei_xml_blocks(first[1], second, page_number)
-        return
-
-    if first.tag in {"p", "lg"}:
-        pb = ET.SubElement(first, "pb")
-        pb.attrib["n"] = page_number
-        pb.tail = second.text or ""
-
-    first.extend(second)
 
 
 @dc.dataclass
@@ -543,7 +472,7 @@ class ProofProject:
     pages: list[ProofPage]
 
     @staticmethod
-    def from_revisions(revisions: list[db.Revision]):
+    def from_revisions(revisions: list[db.Revision]) -> "ProofProject":
         """Create structured data from a project's latest revisions."""
         pages = []
         for revision in revisions:
@@ -557,83 +486,403 @@ class ProofProject:
 
         return ProofProject(pages=pages)
 
-    def to_tei_document(
-        self, target: str, page_numbers: list[str]
-    ) -> tuple[TEIDocument, list[str]]:
-        """Convert the project to a TEI document for publication.
 
-        Approach:
-        - rewrite proof XML into TEI XML. Proofing XML is more user-friendly than TEI XMl,
-          and we're using it for now until we improve our editor.
-        - stitch pages and blocks together, accounting for page breaks, fragments, etc.
+# TODO:
+# - keep <l>-final "-" and mark as appropriate elem
+# x concatenate within <sp> for speaker
+#   - when building, reshape to partial "<sp>" for continuity
+# - build footnote refs and check them with warnings
+#   - <ref target="#X"> type="noteAnchor">
+#   - <note xml:id="X" type="footnote">...</note>
+def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
+    # Text reshaping
+    # TODO: move this elsewhere?
+    for el in xml.iter():
+        if el.tag == "stage":
+            # Remove whitespace around () for stage directions
+            text = el.text or ""
+            text = re.sub(r"\(\s*", "", text)
+            text = re.sub(r"\s*\)", "", text)
+            el.text = text
+            # add whitespace before following element
+            if el.tail and el.tail[0] != " ":
+                el.tail = " " + el.tail
+        elif el.tag == "speaker":
+            # Remove trailing "-" for speakers
+            text = el.text or ""
+            text = re.sub(r"(.*?)\s*-\s*", r"\1", text)
+            el.text = text
+        elif el.tag == "chaya":
+            # Remove surrounding [ ] brackets.
+            text = (el.text or "").strip()
+            text = re.sub(r"^\[\s*", "", text)
+            text = re.sub(r"\s*\]$", "", text)
+            el.text = text
+        elif el.tag == "verse":
+            # Add consistent spacing around double dandas.
+            text = (el.text or "").strip()
+            text = re.sub(r"\s*॥\s*", " ॥ ", text)
+            text = re.sub(r"॥ $", "॥", text)
+            el.text = text
+        elif el.tag == "ref":
+            # Assign a temporary id for cross-referencing later.
+            el.attrib["type"] = "noteAnchor"
+            el.attrib["target"] = f"{image_number}.{el.text or ''}"
 
-        :param target: the name of the `text` to target. (A project may contain multiple texts.)
-        :param page_numbers: a map from page index (e.g, 1, 2, 3) to the book's actual
-            page numbers (ii, 4, etc.)
+    # <speaker>
+    try:
+        speaker = next(x for x in xml if x.tag == "speaker")
+    except StopIteration:
+        speaker = None
+    if speaker is not None:
+        old_tag = xml.tag
+        old_attrib = xml.attrib
+        print(old_attrib)
+        old_children = [x for x in xml if x.tag != "speaker"]
 
-        :return: a complete document.
-        """
+        speaker_tail = speaker.tail or ""
+        speaker.tail = ""
 
-        errors = []
+        xml.clear()
+        xml.tag = "sp"
+        xml.append(speaker)
+        if not old_children and not speaker_tail.strip():
+            # Special case: <p> contains only speaker, so don't create a child elem.
+            return
 
-        def _iter_blocks():
-            for i, page in enumerate(self.pages):
-                for block in page.blocks:
-                    if block.text == target and block.n:
-                        yield (i, page, block)
+        child = ET.SubElement(xml, old_tag, old_attrib)
+        child.text = (speaker_tail + (xml[-1].text or "")).strip()
+        child.extend(old_children)
+        _rewrite_block_to_tei_xml(child, image_number)
+        # Can lose other attrs, but must preserve n if present.
+        if "n" in old_attrib:
+            child.attrib["n"] = old_attrib["n"]
+        return
 
-        # TODO:
-        # - generalize multi-line inline tag behavior for lg
+    # <error> and <fix>
+    i = 0
+    while i < len(xml):
+        el = xml[i]
+        el_tail = (el.tail or "").strip()
+        if el.tag not in ("error", "fix"):
+            i += 1
+            continue
 
-        # n --> block
-        tree_map = {}
-        # n --> page ID
-        page_map = {}
-        for page_index, page, block in _iter_blocks():
-            if block.type not in {"p", "verse"}:
-                continue
+        # Standardize order: <error> then <fix>
+        if i + 1 < len(xml):
+            el_next = xml[i + 1]
+            if (el.tag, el_next.tag) == ("fix", "error") and not el_tail:
+                # Normalize to avoid weird errors later.
+                el.tail = ""
+                xml[i], xml[i + 1] = el_next, el
 
+        # Reload since `el` may be stale after swap.
+        el = xml[i]
+        if el.tag == "error":
+            error = xml[i]
+            has_counterpart = i + 1 < len(xml) and not el_tail
+            maybe_fix = xml[i + 1] if has_counterpart else None
+
+            choice = ET.Element("choice")
+            sic = ET.SubElement(choice, "sic")
+            sic.text = el.text or ""
+            corr = ET.SubElement(choice, "corr")
+            if maybe_fix is not None:
+                corr.text = maybe_fix.text or ""
+                choice.tail = maybe_fix.tail
+                del xml[i + 1]
+            else:
+                choice.tail = error.tail
+            del xml[i]
+
+            xml.insert(i, choice)
+        elif el.tag == "fix":
+            # Edge case: <fix> without <error> is renamed to <supplied>.
+            el.tag = "supplied"
+
+        i += 1
+
+    if xml.tag == "verse":
+        xml.tag = "lg"
+    elif xml.tag == "heading":
+        xml.tag = "head"
+    elif xml.tag == "footnote":
+        xml.tag = "note"
+
+    # <p> text normalization
+    if xml.tag == "p":
+
+        def _normalize_text(xml):
+            xml.text = re.sub(r"-\n", "", xml.text or "", flags=re.M)
+            xml.text = re.sub(r"\s+", " ", xml.text, flags=re.M)
+            xml.tail = re.sub(r"-\n", "", xml.tail or "", flags=re.M)
+            xml.tail = re.sub(r"\s+", " ", xml.tail, flags=re.M)
+            for el in xml:
+                _normalize_text(el)
+
+        _normalize_text(xml)
+
+        # <chaya> is currently supported only for <p> elements.
+        try:
+            chaya = next(x for x in xml if x.tag == "chaya")
+        except StopIteration:
+            chaya = None
+        if chaya is not None:
+            choice = ET.Element("choice")
+            choice.attrib["type"] = "chaya"
+
+            prakrit = ET.SubElement(choice, "seg")
+            prakrit.attrib["xml:lang"] = "pra"
+            prakrit.text = xml.text
+            prakrit.extend(x for x in xml if x.tag != "chaya")
+
+            sanskrit = ET.SubElement(choice, "seg")
+            sanskrit.attrib["xml:lang"] = "sa"
+            sanskrit.text = chaya.text
+            sanskrit.extend(chaya)
+
+            xml.text = ""
+            del xml[:]
+            xml.append(choice)
+
+    # <verse> line splitting
+    if xml.tag == "lg":
+        lines = []
+        for fragment in (xml.text or "").strip().splitlines():
+            line = ET.Element("l")
+            line.text = fragment
+            lines.append(line)
+
+        for el in xml:
+            if not lines:
+                lines.append(ET.Element("l"))
+            lines[-1].append(el)
+            for i, fragment in enumerate((el.tail or "").strip().splitlines()):
+                if i == 0:
+                    el.tail = fragment
+                else:
+                    lines.append(ET.Element("l"))
+                    lines[-1].text = fragment
+
+        xml.text = ""
+        xml.clear()
+        xml.extend(lines)
+
+    # At this point, block elements should have no attrib data left. Clean up lingering references
+    # from our proofing XML.
+    xml.attrib = {}
+    if xml.tag == "note":
+        xml.attrib["type"] = "footnote"
+
+
+def _concatenate_tei_xml_blocks(
+    first: ET.Element, second: ET.Element, page_number: str
+):
+    """Concatenate two blocks of TEI xml by updating the first block in-place.
+
+    Use case: merging blocks across page breaks.
+    """
+    if first.tag == "sp":
+        # Special case for <sp>: concatenate children, leaving speaker alone.
+        assert len(first) == 2
+        _concatenate_tei_xml_blocks(first[1], second, page_number)
+        return
+
+    if first.tag in {"p", "lg"}:
+        pb = ET.SubElement(first, "pb")
+        pb.attrib["n"] = page_number
+        pb.tail = second.text or ""
+
+    first.extend(second)
+
+
+def create_tei_document(
+    revisions: list[db.Revision], page_numbers: list[str], target: str
+) -> tuple[TEIDocument, list[str]]:
+    """Convert the project to a TEI document for publication.
+
+    Approach:
+    - rewrite proof XML into TEI XML. Proofing XML is more user-friendly than TEI XMl,
+      and we're using it for now until we improve our editor.
+    - stitch pages and blocks together, accounting for page breaks, fragments, etc.
+
+    :param target: the name of the `text` to target. (A project may contain multiple texts.)
+    :param page_numbers: a map from page index (e.g, 1, 2, 3) to the book's actual
+        page numbers (ii, 4, etc.)
+
+    :return: a complete document.
+    """
+
+    def _iter_blocks() -> Iterable[IndexedBlock]:
+        """Iterate over all blocks in the given revisions."""
+        for i, revision in enumerate(revisions):
+            page_text = revision.content
             try:
-                print_page_number = page_numbers[page_index]
-            except IndexError:
-                print_page_number = DEFAULT_PRINT_PAGE_NUMBER
+                page_xml = DET.fromstring(page_text)
+            except ET.ParseError:
+                page_struct = ProofPage.from_content_and_page_id(page_text, 0)
+                page_xml_str = page_struct.to_xml_string()
+                page_xml = DET.fromstring(page_xml_str)
 
-            block_xml = DET.fromstring(f"<{block.type}>{block.content}</{block.type}>")
-            _rewrite_block_to_tei_xml(block_xml)
+            image_number = i + 1
+            for block_index, block in enumerate(page_xml):
+                yield IndexedBlock(
+                    revision.page_id, revision.id, image_number, block_index, page_xml
+                )
 
-            tag_name = block_xml.tag
-            if block.n in tree_map:
-                first = tree_map[block.n]
-                _concatenate_tei_xml_blocks(first, block_xml, print_page_number)
+    def _iter_filtered_blocks() -> Iterable[IndexedBlock]:
+        if target.startswith("("):
+            block_filter = Filter(target)
+        else:
+            # Legacy behavior.
+            block_filter = Filter(f"(label {target})")
+
+        for block in _iter_blocks():
+            if block_filter.matches(block):
+                yield block
+
+    def _parse_metadata(text: str) -> dict[str, str]:
+        ret = {}
+        for line in text.splitlines():
+            key, value = line.split("=")
+            key = key.strip()
+            value = value.strip()
+            ret[key] = value
+        return ret
+
+    errors = []
+    # n --> block
+    element_map: dict[str, ET.Element] = {}
+    # n -> <note> block
+    footnote_map: dict[str, ET.Element] = {}
+    # n --> page ID (for tying blocks to the pages they come from.)
+    page_map: dict[str, int] = {}
+    # str because this could be 1.1, etc.
+    div_n: str = ""
+    # tag -> last n for this tag type.
+    block_ns: dict[str, str] = {}
+    merge_next = None
+    active_sp = None
+
+    for block in _iter_filtered_blocks():
+        proof_xml = block.page_xml[block.block_index]
+
+        if proof_xml.tag == "metadata":
+            # `metadata` contains special commands for this function.
+            data = _parse_metadata(proof_xml.text or "")
+            if "speaker" in data:
+                # TODO: support other `speaker` settings.
+                active_sp = None
+            continue
+
+        # Whether the block should merge into the next of the same type.
+        should_merge_next = (
+            proof_xml.get("merge-next", "false").lower() == "true"
+            or proof_xml.get("merge-text", "false").lower() == "true"
+        )
+
+        # Deep copy to avoid mutating page XML
+        tei_xml = copy.deepcopy(proof_xml)
+        _rewrite_block_to_tei_xml(tei_xml, block.image_number)
+
+        # Assign "n" to all blocks so that they have unique names (for translations, etc.)
+        n = proof_xml.attrib.get("n")
+        if tei_xml.tag in {"note"}:
+            # Do nothing -- these elements should never have an "n" assigned.
+            pass
+        elif n and tei_xml.tag != "sp":
+            # Exception for `sp` since `n` is never added explicitly for `sp`.
+            tei_xml.attrib["n"] = n
+            block_ns[tei_xml.tag] = str(n)
+        else:
+            prev_n = block_ns.get(tei_xml.tag, f"{tei_xml.tag}0")
+
+            if m := re.search(r"(.*?)(\d+)$", prev_n):
+                n = f"{m.group(1)}{int(m.group(2)) + 1}"
             else:
-                block_xml.attrib["n"] = block.n
-                tree_map[block.n] = block_xml
-                page_map[block.n] = page.id
+                n = prev_n + "2"
 
-        tei_sections = {}
-        for block_slug, tree in tree_map.items():
-            page_id = page_map.get(block_slug)
-            block = TEIBlock(
-                xml=ET.tostring(tree, encoding="unicode"),
-                slug=block_slug,
-                page_id=page_id,
-            )
+            tei_xml.attrib["n"] = n
+            block_ns[tei_xml.tag] = n
 
-            # HACK: for now, strip out footnote markup -- it's not supported
-            # and it looks ugly.
-            block.xml = re.sub(r"\[\^.*?\]", "", block.xml)
+        _has_no_text = not (tei_xml.text or "").strip()
+        _has_one_stage_element = len(tei_xml) == 1 and tei_xml[0].tag == "stage"
+        _stage_has_no_tail = len(tei_xml) == 1 and not (tei_xml[0].tail or "").strip()
+        _is_stage_only = _has_no_text and _has_one_stage_element and _stage_has_no_tail
+        if _is_stage_only:
+            # TODO: how reliable is this?
+            active_sp = None
+        if tei_xml.tag == "sp":
+            active_sp = None
 
-            section_n, _, block_n = block_slug.rpartition(".")
-            if not section_n:
-                section_n = "all"
+        # Page number
+        try:
+            print_page_number = page_numbers[block.image_number]
+        except IndexError:
+            print_page_number = DEFAULT_PRINT_PAGE_NUMBER
 
-            if section_n in tei_sections:
-                section = tei_sections[section_n]
-            else:
-                section = TEISection(slug=section_n, blocks=[])
-                tei_sections[section_n] = section
+        if merge_next is not None:
+            _concatenate_tei_xml_blocks(merge_next, tei_xml, print_page_number)
+            merge_next = None
+        else:
+            if tei_xml.tag == "note":
+                mark = proof_xml.attrib.get("mark")
+                if mark:
+                    note_name = f"{block.image_number}.{mark}"
+                    footnote_map[note_name] = tei_xml
+            elif n:
+                page_map[n] = block.page_id
+                if tei_xml.tag in {"p", "lg"} and active_sp is not None:
+                    active_sp.append(tei_xml)
+                else:
+                    element_map[n] = tei_xml
 
-            section.blocks.append(block)
+        if tei_xml.tag == "sp":
+            active_sp = tei_xml
 
-        doc = TEIDocument(sections=list(tei_sections.values()))
-        return (doc, errors)
+        if should_merge_next:
+            merge_next = tei_xml
+
+    # Insert footnotes where we find matches.
+    if footnote_map:
+        fn_n = 1
+        for tei_block in element_map.values():
+            for el in tei_block.iter():
+                ref_target = el.attrib.get("target")
+                if el.tag == "ref" and ref_target in footnote_map:
+                    note_id = f"fn{fn_n}"
+                    fn_n += 1
+                    note = footnote_map[ref_target]
+                    note.attrib["xml:id"] = note_id
+                    el.attrib["target"] = f"#{note_id}"
+                    tei_block.append(note)
+
+    # Assemble blocks into a document.
+    tei_sections = {}
+    for block_slug, tree in element_map.items():
+        assert block_slug in page_map
+        page_id = page_map[block_slug]
+        block = TEIBlock(
+            xml=ET.tostring(tree, encoding="unicode"),
+            slug=block_slug,
+            page_id=page_id,
+        )
+
+        # HACK: for now, strip out footnote markup -- it's not supported
+        # and it looks ugly.
+        block.xml = re.sub(r"\[\^.*?\]", "", block.xml)
+
+        section_n, _, verse_n = block_slug.rpartition(".")
+        if not section_n:
+            section_n = "all"
+
+        if section_n in tei_sections:
+            section = tei_sections[section_n]
+        else:
+            section = TEISection(slug=section_n, blocks=[])
+            tei_sections[section_n] = section
+
+        section.blocks.append(block)
+
+    doc = TEIDocument(sections=list(tei_sections.values()))
+    return (doc, errors)

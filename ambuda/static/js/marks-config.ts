@@ -55,6 +55,13 @@ export const INLINE_MARKS: InlineMarkConfig[] = [
     className: 'pm-chaya',
     excludes: 'speaker',
   },
+  {
+    name: 'prakrit',
+    emoji: '☀️',
+    label: 'Mark as prakrit (glossed)',
+    className: 'pm-prakrit',
+    excludes: 'speaker',
+  },
 ];
 
 export type MarkName = typeof INLINE_MARKS[number]['name'];

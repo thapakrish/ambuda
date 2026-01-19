@@ -1,5 +1,6 @@
 import re
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 
 import pytest
 
@@ -8,6 +9,13 @@ from ambuda.utils import structuring as s
 
 P = s.ProofPage
 B = s.ProofBlock
+
+
+@dataclass
+class MockRevision:
+    id: int
+    page_id: int
+    content: str
 
 
 @pytest.mark.parametrize(
@@ -126,7 +134,7 @@ def test_validate_page_xml(input, expected):
 )
 def test_rewrite_block_to_tei_xml(input, expected):
     xml = ET.fromstring(input)
-    s._rewrite_block_to_tei_xml(xml)
+    s._rewrite_block_to_tei_xml(xml, 42)
     actual = ET.tostring(xml)
     assert expected.encode("utf-8") == actual
 
@@ -205,98 +213,164 @@ def test_from_content_and_page_id():
     )
 
 
-@pytest.mark.parametrize(
-    "input,expected",
-    [
-        # Basic <p>
-        (
-            P(id=0, blocks=[B(type="p", content="अ", n="1")]),
-            s.TEIBlock(xml='<p n="1">अ</p>', slug="1", page_id=0),
-        ),
-        # <p> with concatenation
-        (
-            P(
-                id=0,
-                blocks=[
-                    B(type="p", content="अ", n="1", merge_next=True),
-                    B(type="p", content="a", n="1"),
-                ],
-            ),
-            s.TEIBlock(xml='<p n="1">अ<pb n="-" />a</p>', slug="1", page_id=0),
-        ),
-        # <p> with speaker
-        (
-            P(
-                id=0,
-                blocks=[
-                    B(type="p", content="<speaker>foo</speaker> अ", n="1"),
-                ],
-            ),
+def _test_create_tei_document(input, expected):
+    """Helper function for testing create_tei_document."""
+    revisions = []
+    for i, page_xml in enumerate(input):
+        revisions.append(MockRevision(id=i, page_id=i, content=page_xml))
+
+    page_numbers = [str(x + 1) for x in range(len(revisions))]
+    tei_doc, _errors = s.create_tei_document(revisions, page_numbers, "(and)")
+    tei_blocks = tei_doc.sections[0].blocks
+    assert tei_blocks == expected
+
+
+def test_create_tei_document__paragraph():
+    _test_create_tei_document(
+        ['<page><p n="1">अ</p></page>'],
+        [s.TEIBlock(xml='<p n="1">अ</p>', slug="1", page_id=0)],
+    )
+
+
+def test_create_tei_document__paragraph_with_concatenation():
+    _test_create_tei_document(
+        [
+            '<page><p n="1" merge-next="true">अ</p></page>',
+            '<page><p n="1">a</p></page>',
+        ],
+        [s.TEIBlock(xml='<p n="1">अ<pb n="-" />a</p>', slug="1", page_id=0)],
+    )
+
+
+def test_create_tei_document__paragraph_with_speaker():
+    _test_create_tei_document(
+        ['<page><p n="1"><speaker>foo</speaker> अ</p></page>'],
+        [
             s.TEIBlock(
-                xml='<sp n="1"><speaker>foo</speaker><p>अ</p></sp>', slug="1", page_id=0
-            ),
-        ),
-        # <p> with speaker and concatenation
-        (
-            P(
-                id=0,
-                blocks=[
-                    B(
-                        type="p",
-                        content="<speaker>foo</speaker> अ",
-                        n="1",
-                        merge_next=True,
-                    ),
-                    B(type="p", content="a", n="1"),
-                ],
-            ),
+                xml='<sp n="sp1"><speaker>foo</speaker><p n="1">अ</p></sp>',
+                slug="sp1",
+                page_id=0,
+            )
+        ],
+    )
+
+
+def test_create_tei_document__paragraph_with_speaker_and_concatenation():
+    _test_create_tei_document(
+        [
+            '<page><p n="1" merge-next="true"><speaker>foo</speaker> अ</p></page>',
+            '<page><p n="1">a</p></page>',
+        ],
+        [
             s.TEIBlock(
-                xml='<sp n="1"><speaker>foo</speaker><p>अ<pb n="-" />a</p></sp>',
-                slug="1",
+                xml='<sp n="sp1"><speaker>foo</speaker><p n="1">अ<pb n="-" />a</p></sp>',
+                slug="sp1",
                 page_id=0,
             ),
-        ),
-        # Basic <verse>
-        (
-            P(id=0, blocks=[B(type="verse", content="अ", n="1")]),
-            s.TEIBlock(xml='<lg n="1"><l>अ</l></lg>', slug="1", page_id=0),
-        ),
-        # <verse> with concatenation
-        (
-            P(
-                id=0,
-                blocks=[
-                    B(type="verse", content="अ", n="1", merge_next=True),
-                    B(type="verse", content="a", n="1"),
-                ],
-            ),
+        ],
+    )
+
+
+def test_create_tei_document__verse():
+    _test_create_tei_document(
+        ['<page><verse n="1">अ</verse></page>'],
+        [s.TEIBlock(xml='<lg n="1"><l>अ</l></lg>', slug="1", page_id=0)],
+    )
+
+
+def test_create_tei_document__verse_with_concatenation():
+    _test_create_tei_document(
+        [
+            '<page><verse n="1" merge-next="true">अ</verse></page>',
+            '<page><verse n="1">a</verse></page>',
+        ],
+        [
             s.TEIBlock(
                 xml='<lg n="1"><l>अ</l><pb n="-" /><l>a</l></lg>', slug="1", page_id=0
-            ),
-        ),
-        # Other
-        (
-            P(
-                id=0,
-                blocks=[
-                    B(type="verse", content="अ<fix>क</fix>ख", n="1"),
-                ],
-            ),
+            )
+        ],
+    )
+
+
+def test_create_tei_document__verse_with_fix_inline_element():
+    _test_create_tei_document(
+        ['<page><verse n="1">अ<fix>क</fix>ख</verse></page>'],
+        [
             s.TEIBlock(
                 xml='<lg n="1"><l>अ<supplied>क</supplied>ख</l></lg>',
                 slug="1",
                 page_id=0,
-            ),
-        ),
-        (
-            P(id=0, blocks=[B(type="p", content="अ<fix>क</fix>ख", n="1")]),
+            )
+        ],
+    )
+
+
+def test_create_tei_document__paragraph_with_fix_inline_element():
+    _test_create_tei_document(
+        ['<page><p n="1">अ<fix>क</fix>ख</p></page>'],
+        [
             s.TEIBlock(
                 xml='<p n="1">अ<supplied>क</supplied>ख</p>', slug="1", page_id=0
             ),
-        ),
-    ],
-)
-def test_to_tei_document(input, expected):
-    tei_doc, _errors = s.ProofProject(pages=[input]).to_tei_document(None, [])
-    tei_block = tei_doc.sections[0].blocks[0]
-    assert tei_block == expected
+        ],
+    )
+
+
+def test_create_tei_document__autoincrement():
+    _test_create_tei_document(
+        ['<page><p n="1">a</p><p>b</p><p>c</p></page>'],
+        [
+            s.TEIBlock(xml='<p n="1">a</p>', slug="1", page_id=0),
+            s.TEIBlock(xml='<p n="2">b</p>', slug="2", page_id=0),
+            s.TEIBlock(xml='<p n="3">c</p>', slug="3", page_id=0),
+        ],
+    )
+
+
+def test_create_tei_document__autoincrement_with_dot_prefix():
+    _test_create_tei_document(
+        ['<page><p n="1.1">a</p><p>b</p><p>c</p></page>'],
+        [
+            s.TEIBlock(xml='<p n="1.1">a</p>', slug="1.1", page_id=0),
+            s.TEIBlock(xml='<p n="1.2">b</p>', slug="1.2", page_id=0),
+            s.TEIBlock(xml='<p n="1.3">c</p>', slug="1.3", page_id=0),
+        ],
+    )
+
+
+def test_create_tei_document__autoincrement_with_non_dot_prefix():
+    _test_create_tei_document(
+        ['<page><p n="p1">a</p><p>b</p><p>c</p></page>'],
+        [
+            s.TEIBlock(xml='<p n="p1">a</p>', slug="p1", page_id=0),
+            s.TEIBlock(xml='<p n="p2">b</p>', slug="p2", page_id=0),
+            s.TEIBlock(xml='<p n="p3">c</p>', slug="p3", page_id=0),
+        ],
+    )
+
+
+def test_create_tei_document__autoincrement_with_weird_prefix():
+    _test_create_tei_document(
+        ['<page><p n="foo">a</p><p>b</p><p>c</p></page>'],
+        [
+            s.TEIBlock(xml='<p n="foo">a</p>', slug="foo", page_id=0),
+            s.TEIBlock(xml='<p n="foo2">b</p>', slug="foo2", page_id=0),
+            s.TEIBlock(xml='<p n="foo3">c</p>', slug="foo3", page_id=0),
+        ],
+    )
+
+
+def test_create_tei_document__autoincrement_with_mixed_types():
+    _test_create_tei_document(
+        [
+            '<page><p n="p1">a</p><verse n="1">A</verse></page>',
+            "<page><p>b</p><verse>B</verse><p>c</p></page>",
+        ],
+        [
+            s.TEIBlock(xml='<p n="p1">a</p>', slug="p1", page_id=0),
+            s.TEIBlock(xml='<lg n="1"><l>A</l></lg>', slug="1", page_id=0),
+            s.TEIBlock(xml='<p n="p2">b</p>', slug="p2", page_id=1),
+            s.TEIBlock(xml='<lg n="2"><l>B</l></lg>', slug="2", page_id=1),
+            s.TEIBlock(xml='<p n="p3">c</p>', slug="p3", page_id=1),
+        ],
+    )

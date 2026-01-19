@@ -16,6 +16,7 @@ const BLOCK_TYPES = [
   { tag: 'footnote', label: 'Footnote', color: 'green' },
   { tag: 'trailer', label: 'Trailer', color: 'teal' },
   { tag: 'ignore', label: 'Ignore', color: 'gray' },
+  { tag: 'metadata', label: 'Metadata', color: 'gray' },
 ];
 
 const BLOCK_TYPE_COLORS: Record<string, string> = {
@@ -27,6 +28,7 @@ const BLOCK_TYPE_COLORS: Record<string, string> = {
   'footnote': 'border-green-400',
   'trailer': 'border-teal-400',
   'ignore': 'border-gray-300',
+  'metadata': 'border-gray-300',
 };
 
 // Nodes are the basic pieces of the document.
