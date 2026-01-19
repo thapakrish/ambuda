@@ -123,11 +123,35 @@ def index():
         SitePageStatus.SKIP: "bg-slate-100",
     }
 
+    # Only load the columns we need for the template
     projects = list(
         session.scalars(
-            select(db.Project).filter(db.Project.status == ProjectStatus.ACTIVE)
+            select(db.Project)
+            .filter(db.Project.status == ProjectStatus.ACTIVE)
+            .options(
+                orm.load_only(
+                    db.Project.id,
+                    db.Project.display_title,
+                    db.Project.slug,
+                    db.Project.created_at,
+                    db.Project.description,
+                )
+            )
         ).all()
     )
+
+    # Only calculate stats for active projects to avoid wasting time on inactive ones
+    active_project_ids = [p.id for p in projects]
+    if not active_project_ids:
+        # No active projects, return early
+        return render_template(
+            "proofing/index.html",
+            projects=[],
+            statuses_per_project={},
+            progress_per_project={},
+            pages_per_project={},
+        )
+
     stmt = (
         select(
             db.Page.project_id,
@@ -135,6 +159,7 @@ def index():
             func.count(db.Page.id).label("count"),
         )
         .join(db.PageStatus)
+        .filter(db.Page.project_id.in_(active_project_ids))
         .group_by(db.Page.project_id, db.PageStatus.name)
     )
     stats = session.execute(stmt).all()
@@ -224,7 +249,6 @@ def create_project():
     #     )
 
     display_title = form.display_title.data or None
-    assert display_title, form
 
     if pdf_source == "url":
         pdf_url = form.pdf_url.data

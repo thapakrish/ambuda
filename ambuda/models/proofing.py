@@ -15,7 +15,7 @@ from ambuda.s3_utils import S3Path
 
 def string():
     """Create a non-nullable string column that defaults to the empty string."""
-    return Column(String, nullable=False, default="")
+    return mapped_column(String, nullable=False, default="")
 
 
 def text():
@@ -101,23 +101,23 @@ class Project(Base):
     #: Human-readable ID, which we display in the URL.
     slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     #: UUID (for s3 uploads, stability despite slug renames, etc.)
-    uuid = Column(String, unique=True, nullable=False, default=_create_uuid)
+    uuid: Mapped[str] = mapped_column(unique=True, nullable=False, default=_create_uuid)
 
     #: Human-readable title, which we show on the page.
     display_title: Mapped[str] = mapped_column(String, nullable=False)
 
     #: The full book title as it appears in print.
-    print_title = string()
+    print_title: Mapped[str] = string()
     #: The document's author.
-    author = string()
+    author: Mapped[str] = string()
     #: The document's editor.
-    editor = string()
+    editor: Mapped[str] = string()
     #: The document's publisher.
-    publisher = string()
+    publisher: Mapped[str] = string()
     #: The document's publication year.
-    publication_year = string()
+    publication_year: Mapped[str] = string()
     #: A link to the book's WorldCat entry, if available.
-    worldcat_link = string()
+    worldcat_link: Mapped[str] = string()
 
     #: Markdown for this project (to entice contributors, etc.)
     description = text()
@@ -134,11 +134,13 @@ class Project(Base):
     )
 
     #: Timestamp at which this project was created.
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
     )
     #: Timestamp at which this project was last updated.
-    updated_at = Column(DateTime, default=same_as("created_at"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=same_as("created_at"), nullable=False
+    )
 
     #: Discussion board for this project.
     board_id = foreign_key("discussion_boards.id")
@@ -327,8 +329,8 @@ class Revision(Base):
         Integer, ForeignKey("proof_page_statuses.id"), index=True, nullable=False
     )
     #: Timestamp at which this revision was created.
-    created_at = Column(
-        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False
     )
     #: An optional editor summary for this revision.
     summary = Column(Text_, nullable=False, default="")

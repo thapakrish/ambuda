@@ -35,6 +35,7 @@ except ImportError:
 @functools.cache
 def get_engine():
     database_uri = current_app.config["SQLALCHEMY_DATABASE_URI"]
+    # For debugging, add echo=True to the constructor.
     return create_engine(database_uri)
 
 
