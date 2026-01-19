@@ -34,7 +34,16 @@
     <legend class="text-lg font-bold mt-8 mb-4">Basic information</legend>
     <div class="bg-slate-100 p-4">
       {{ mf.field(form.display_title) }}
-      {{ mf.field(form.slug) }}
+      <div class="my-2">
+        {{ mf.label(form.slug.label) }}
+        <div class="flex gap-2">
+          {{ form.slug(class_="p-2 block w-full my-2", id="slug-field") }}
+          <button type="button" class="btn btn-secondary whitespace-nowrap" onclick="regenerateSlug()">{{ _('Regenerate') }}</button>
+        </div>
+      </div>
+      {% if current_user.is_p2 %}
+        {{ mf.field(form.status) }}
+      {% endif %}
       {{ mf.field(form.genre) }}
       {{ mf.markdown_field(form.description) }}
       {{ mf.field(form.page_numbers) }}
@@ -62,5 +71,34 @@
 
   <input class="btn btn-submit mt-4" type="submit" value="{{ _('Save changes') }}">
 </form>
+
+<script>
+function regenerateSlug() {
+  const titleField = document.getElementById('display_title');
+  const slugField = document.getElementById('slug-field');
+
+  if (!titleField || !slugField) return;
+
+  const title = titleField.value;
+
+  // Generate slug: strip, lowercase, replace whitespace/special chars with hyphens
+  let slug = title
+    .trim()
+    .toLowerCase()
+    // Replace any sequence of whitespace with a single hyphen
+    .replace(/\s+/g, '-')
+    // Remove diacritics and special characters (keep only alphanumeric and hyphens)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    // Replace any non-alphanumeric characters (except hyphens) with hyphens
+    .replace(/[^a-z0-9-]/g, '-')
+    // Replace multiple consecutive hyphens with a single hyphen
+    .replace(/-+/g, '-')
+    // Remove leading/trailing hyphens
+    .replace(/^-+|-+$/g, '');
+
+  slugField.value = slug;
+}
+</script>
 
 {% endblock %}

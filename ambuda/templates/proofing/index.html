@@ -35,7 +35,7 @@
     {% endif %}
   </div>
 
-  {{ m.proofing_tabs('projects') }}
+  {{ m.proofing_tabs('projects', current_user) }}
 
   <div class="flex gap-4 text-sm mb-4">
     <a href="{{ url_for('proofing.recent_changes') }}" class="text-sky-900 hover:underline">{{ _('Recent changes') }} &rarr;</a>

@@ -27,7 +27,6 @@ from ambuda import database as db
 from ambuda import queries as q
 from ambuda.enums import SitePageStatus
 from ambuda.utils import google_ocr, llm_structuring, project_utils, structuring
-from ambuda.utils.assets import get_page_image_filepath
 from ambuda.utils.diff import revision_diff
 from ambuda.utils.revisions import EditError, add_revision
 from ambuda.utils.structuring import ProofPage, validate_page_xml
@@ -139,11 +138,8 @@ def _get_image_url(project: db.Project, page: db.Page) -> str:
         return url_for(
             "site.page_image", project_slug=project.slug, page_slug=page.slug
         )
-
-    CLOUDFRONT_BASE_URL = current_app.config.get("CLOUDFRONT_BASE_URL")
-    page_uuid = page.uuid
-    s3_url = f"{CLOUDFRONT_BASE_URL}/pages/{page_uuid}.jpg"
-    return s3_url
+    else:
+        return page.cloudfront_url(current_app.config.get("CLOUDFRONT_BASE_URL", ""))
 
 
 @bp.route("/<project_slug>/<page_slug>/")
@@ -353,8 +349,11 @@ def ocr_api(project_slug, page_slug):
         abort(404)
     assert page_
 
-    image_path = get_page_image_filepath(project_slug, page_slug)
-    ocr_response = google_ocr.run(image_path)
+    ocr_response = google_ocr.run(
+        page_,
+        current_app.config.get("S3_BUCKET"),
+        current_app.config.get("CLOUDFRONT_BASE_URL"),
+    )
     ocr_text = ocr_response.text_content
 
     structured_data = ProofPage.from_content_and_page_id(ocr_text, page_.id)

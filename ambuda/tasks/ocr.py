@@ -1,5 +1,7 @@
 """Background tasks for proofing projects."""
 
+import logging
+
 from celery import group
 from celery.result import GroupResult
 
@@ -9,7 +11,6 @@ from ambuda.enums import SitePageStatus
 from ambuda.tasks import app
 from ambuda.tasks.utils import get_db_session
 from ambuda.utils import google_ocr
-from ambuda.utils.assets import get_page_image_filepath
 from ambuda.utils.revisions import add_revision
 
 
@@ -17,17 +18,24 @@ def _run_ocr_for_page_inner(
     app_env: str,
     project_slug: str,
     page_slug: str,
-) -> int:
+):
     """Run OCR for a single page without Flask dependency."""
 
     with get_db_session(app_env) as (session, query, cfg):
+        logging.info(f"Running OCR for page {project_slug}/{page_slug}")
         bot_user = query.user(consts.BOT_USERNAME)
         if bot_user is None:
             raise ValueError(f'User "{consts.BOT_USERNAME}" is not defined.')
 
+        project_ = query.project(project_slug)
+        if not project_:
+            raise ValueError(f"Unknown project {project_slug}")
+        page_ = query.page(project_.id, page_slug)
+        if not page_:
+            raise ValueError(f"Unknown page {project_slug}/{page_slug}")
+
         # The actual API call.
-        image_path = get_page_image_filepath(project_slug, page_slug, cfg.UPLOAD_FOLDER)
-        ocr_response = google_ocr.run(image_path)
+        ocr_response = google_ocr.run(page_, cfg.S3_BUCKET, cfg.CLOUDFRONT_BASE_URL)
 
         project = query.project(project_slug)
         page = query.page(project.id, page_slug)
@@ -40,7 +48,7 @@ def _run_ocr_for_page_inner(
 
         summary = "Run OCR"
         try:
-            return add_revision(
+            _ = add_revision(
                 page=page,
                 summary=summary,
                 content=ocr_response.text_content,
@@ -50,7 +58,9 @@ def _run_ocr_for_page_inner(
                 session=session,
                 query=query,
             )
+            logging.info(f"Created new revision for page {project_slug}/{page_slug}")
         except Exception as e:
+            logging.info(f"OCR failed for page {project_slug}/{page_slug}: {e}")
             raise ValueError(
                 f'OCR failed for page "{project.slug}/{page.slug}".'
             ) from e

@@ -13,6 +13,9 @@ from pathlib import Path
 from google.cloud import vision
 from google.cloud.vision_v1 import AnnotateImageResponse
 
+from ambuda import database as db
+from ambuda import s3_utils
+
 
 @dataclass
 class OcrResponse:
@@ -38,11 +41,21 @@ def post_process(text: str) -> str:
     )
 
 
-def prepare_image(file_path: Path):
+def prepare_image(
+    page: db.Page, s3_bucket: str | None, cloudfront_base_url: str | None
+) -> vision.Image | None:
     """Read an image into a protocol buffer for the OCR request."""
-    with open(file_path, "rb") as file_path:
-        content = file_path.read()
-    return vision.Image(content=content)
+    if s3_utils.is_local and s3_bucket:
+        image_bytes = page.s3_path(s3_bucket).read_bytes()
+        return vision.Image(content=image_bytes)
+    elif cloudfront_base_url:
+        return vision.Image(
+            source=vision.ImageSource(
+                image_uri=page.cloudfront_url(cloudfront_base_url)
+            )
+        )
+    else:
+        return None
 
 
 def serialize_bounding_boxes(boxes: list[tuple[int, int, int, int, str]]) -> str:
@@ -56,19 +69,19 @@ def debug_dump_response(response):
         f.write(AnnotateImageResponse.to_json(response))
 
 
-def run(file_path: Path) -> OcrResponse:
+def run(
+    page: db.Page, s3_bucket: str | None, cloudfront_base_url: str | None
+) -> OcrResponse:
     """Run Google OCR over the given image.
 
-    :param file_path: path to the image we'll process with OCR.
     :return: an OCR response containing the image's text content and
         bounding boxes.
     """
-    logging.debug(f"Starting full text annotation: {file_path}")
+    logging.debug(f"Starting full text annotation for page {page.id}")
 
     client = vision.ImageAnnotatorClient()
-    try:
-        image = prepare_image(file_path)
-    except Exception:
+    image = prepare_image(page, s3_bucket, cloudfront_base_url)
+    if image is None:
         return OcrResponse(text_content="", bounding_boxes=[])
 
     # Disable the language hint. It produced identical Devanagari output while

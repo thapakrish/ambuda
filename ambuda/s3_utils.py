@@ -5,13 +5,16 @@ from pathlib import Path
 import boto3
 
 
+def is_local() -> bool:
+    return os.environ["FLASK_ENV"] != "production"
+
+
 @functools.cache
 def _get_client():
-    client = boto3.client("s3")
-    if os.environ["FLASK_ENV"] != "production":
+    if is_local():
         return LocalFSBotoClient()
     else:
-        return client
+        return boto3.client("s3")
 
 
 def _log(msg):

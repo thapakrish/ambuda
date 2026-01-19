@@ -31,6 +31,7 @@ from wtforms import (
     Form,
     FormField,
     HiddenField,
+    SelectField,
     StringField,
     SubmitField,
 )
@@ -40,7 +41,7 @@ from wtforms_sqlalchemy.fields import QuerySelectField
 
 from ambuda import database as db
 from ambuda import queries as q
-from ambuda.models.proofing import PublishConfig, ProjectConfig
+from ambuda.models.proofing import ProjectStatus, PublishConfig, ProjectConfig
 from ambuda.tasks import app as celery_app
 from ambuda.tasks import llm_structuring as llm_structuring_tasks
 from ambuda.tasks import ocr as ocr_tasks
@@ -110,6 +111,11 @@ class EditMetadataForm(FlaskForm):
         render_kw={
             "placeholder": _l("e.g. Avantisundarīkathā"),
         },
+        validators=[DataRequired()],
+    )
+    status = SelectField(
+        _l("Status"),
+        choices=[(status.value, status.value) for status in ProjectStatus],
         validators=[DataRequired()],
     )
     description = StringField(
@@ -308,7 +314,14 @@ def edit(slug):
                     form=form,
                 )
 
+        # Store original status before populate_obj
+        original_status = project_.status
         form.populate_obj(project_)
+
+        # Only allow p2 users to change status
+        if not current_user.is_p2:
+            project_.status = original_status
+
         session.commit()
 
         flash(_l("Saved changes."), "success")

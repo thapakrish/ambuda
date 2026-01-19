@@ -100,9 +100,10 @@
 {% endmacro %}
 
 
-{% macro proofing_tabs(active) %}
+{% macro proofing_tabs(active, current_user) %}
 <div class="border-b border-gray-200 mb-4">
   <nav class="flex gap-6">
+    {% if current_user.is_p2 %}
     <a href="{{ url_for('proofing.dashboard') }}"
        class="py-2 px-1 border-b-2 {% if active == 'dashboard' %}border-sky-900 text-sky-900 font-medium{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
       {{ _('Dashboard') }}
@@ -111,6 +112,7 @@
        class="py-2 px-1 border-b-2 {% if active == 'documents' %}border-sky-900 text-sky-900 font-medium{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
       {{ _('Documents') }}
     </a>
+    {% endif %}
     <a href="{{ url_for('proofing.index') }}"
        class="py-2 px-1 border-b-2 {% if active == 'projects' %}border-sky-900 text-sky-900 font-medium{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %}">
       {{ _('Projects') }}
