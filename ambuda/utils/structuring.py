@@ -13,6 +13,14 @@ from ambuda import database as db
 
 DEFAULT_PRINT_PAGE_NUMBER = "-"
 
+# TODO:
+# All numbers --> ignore
+# Line break after "\d+ ||" and mark as verse
+# scripts / macros
+# directly type harvard kyoto?
+# footnote (^\d+.)
+# break apart multiple footnotes
+
 
 # Keep in sync with prosemirror-editor.ts::BLOCK_TYPES
 class BlockType(StrEnum):
@@ -503,14 +511,14 @@ def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
             text = el.text or ""
             text = re.sub(r"\(\s*", "", text)
             text = re.sub(r"\s*\)", "", text)
-            el.text = text
+            el.text = text.strip()
             # add whitespace before following element
             if el.tail and el.tail[0] != " ":
                 el.tail = " " + el.tail
         elif el.tag == "speaker":
             # Remove trailing "-" for speakers
             text = el.text or ""
-            text = re.sub(r"(.*?)\s*-\s*", r"\1", text)
+            text = re.sub(r"(.*?)\s*[-–]\s*$", r"\1", text)
             el.text = text
         elif el.tag == "chaya":
             # Remove surrounding [ ] brackets.
@@ -738,6 +746,10 @@ def create_tei_document(
             block_filter = Filter(f"(label {target})")
 
         for block in _iter_blocks():
+            if block.page_xml.tag == BlockType.IGNORE:
+                # Always skip "ignore" blocks.
+                continue
+
             if block_filter.matches(block):
                 yield block
 
@@ -763,6 +775,14 @@ def create_tei_document(
     block_ns: dict[str, str] = {}
     merge_next = None
     active_sp = None
+
+    def _get_next_n(block_ns, tag):
+        prev_n = block_ns.get(tag, f"{tag}0")
+        if m := re.search(r"(.*?)(\d+)$", prev_n):
+            n = f"{m.group(1)}{int(m.group(2)) + 1}"
+        else:
+            n = prev_n + "2"
+        return n
 
     for block in _iter_filtered_blocks():
         proof_xml = block.page_xml[block.block_index]
@@ -796,19 +816,25 @@ def create_tei_document(
             # Do nothing -- these elements should never have an "n" assigned.
             pass
         elif n and tei_xml.tag != "sp":
-            # Exception for `sp` since `n` is never added explicitly for `sp`.
+            # Explicit n is never added to `sp`, so skip.
             tei_xml.attrib["n"] = n
             block_ns[tei_xml.tag] = str(n)
         else:
-            prev_n = block_ns.get(tei_xml.tag, f"{tei_xml.tag}0")
-
-            if m := re.search(r"(.*?)(\d+)$", prev_n):
-                n = f"{m.group(1)}{int(m.group(2)) + 1}"
-            else:
-                n = prev_n + "2"
-
+            n = _get_next_n(block_ns, tei_xml.tag)
             tei_xml.attrib["n"] = n
             block_ns[tei_xml.tag] = n
+
+            if tei_xml.tag == "sp":
+                for child_xml in tei_xml:
+                    if child_xml.tag == "speaker":
+                        # <speaker> should never be numbered.
+                        continue
+                    if "n" in child_xml.attrib:
+                        # Don't overwrite existing `n`.
+                        continue
+                    n = _get_next_n(block_ns, child_xml.tag)
+                    child_xml.attrib["n"] = n
+                    block_ns[child_xml.tag] = n
 
         _has_no_text = not (tei_xml.text or "").strip()
         _has_one_stage_element = len(tei_xml) == 1 and tei_xml[0].tag == "stage"
