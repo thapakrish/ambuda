@@ -31,7 +31,7 @@ from ambuda.enums import SitePageStatus
 from ambuda.utils import google_ocr, llm_structuring, project_utils, structuring
 from ambuda.utils.diff import revision_diff
 from ambuda.utils.revisions import EditError, add_revision
-from ambuda.utils.structuring import ProofPage, validate_page_xml
+from ambuda.utils.structuring import ProofPage, validate_proofing_xml
 from ambuda.views.api import bp as api
 from ambuda.views.site import bp as site
 
@@ -39,7 +39,7 @@ bp = Blueprint("page", __name__)
 
 
 def page_xml_validator(form, field):
-    errors = validate_page_xml(field.data)
+    errors = validate_proofing_xml(field.data)
     if errors:
         messages = [error.message for error in errors]
         raise ValidationError("; ".join(messages))
@@ -476,21 +476,21 @@ def _set_element_text(el, text):
 
 def _mark_stage_directions(text, block):
     """Mark stage directions with (.*?) pattern."""
-    pattern = r"\((.*?)\)"
+    pattern = r"(\(.*?\))"
     replacement = r"<stage>\1</stage>"
     return re.sub(pattern, replacement, text)
 
 
 def _mark_speakers(text, block):
     """Mark speakers with ^.*[-] pattern."""
-    pattern = r"^(.*?)[-–]"
-    replacement = r"<speaker>\1</speaker>-"
+    pattern = r"^(.*?[-–])"
+    replacement = r"<speaker>\1</speaker>"
     return re.sub(pattern, replacement, text, flags=re.MULTILINE)
 
 
 def _mark_chaya(text, block):
     """Mark chaya with \[.*?\] pattern."""
-    pattern = r"\[(.*?)\]"
+    pattern = r"(\[.*?\])"
     replacement = r"<chaya>\1</chaya>"
     return re.sub(pattern, replacement, text)
 

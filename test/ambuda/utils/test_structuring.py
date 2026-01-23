@@ -56,8 +56,8 @@ class MockRevision:
         ("<page><p unk='foo'>foo</p></page>", ["Unexpected attribute.*unk"]),
     ],
 )
-def test_validate_page_xml(input, expected):
-    actual = s.validate_page_xml(input)
+def test_validate_proofing_xml(input, expected):
+    actual = s.validate_proofing_xml(input)
 
     assert len(actual) == len(expected)
     for a, e in zip(actual, expected):
@@ -149,6 +149,63 @@ def test_validate_page_xml(input, expected):
     ],
 )
 def test_rewrite_block_to_tei_xml(input, expected):
+    xml = ET.fromstring(input)
+    s._rewrite_block_to_tei_xml(xml, 42)
+    actual = ET.tostring(xml)
+    assert expected.encode("utf-8") == actual
+
+
+@pytest.mark.parametrize(
+    "input,expected",
+    [
+        ("<p><speaker>foo</speaker></p>", "<sp><speaker>foo</speaker></sp>"),
+        ("<p><speaker>foo - </speaker></p>", "<sp><speaker>foo</speaker></sp>"),
+        ("<p><speaker> foo -– </speaker></p>", "<sp><speaker>foo</speaker></sp>"),
+    ],
+)
+def test_rewrite_block_to_tei_xml__speaker(input, expected):
+    xml = ET.fromstring(input)
+    s._rewrite_block_to_tei_xml(xml, 42)
+    actual = ET.tostring(xml)
+    assert expected.encode("utf-8") == actual
+
+
+@pytest.mark.parametrize(
+    "input,expected",
+    [
+        ("<p><stage>foo</stage></p>", "<p><stage>foo</stage></p>"),
+        ("<p><stage>(foo)</stage></p>", '<p><stage rend="parentheses">foo</stage></p>'),
+        (
+            "<p><stage> ( foo ) </stage></p>",
+            '<p><stage rend="parentheses">foo</stage></p>',
+        ),
+    ],
+)
+def test_rewrite_block_to_tei_xml__stage(input, expected):
+    xml = ET.fromstring(input)
+    s._rewrite_block_to_tei_xml(xml, 42)
+    actual = ET.tostring(xml)
+    assert expected.encode("utf-8") == actual
+
+
+@pytest.mark.parametrize(
+    "input,expected",
+    [
+        (
+            "<p><chaya>foo</chaya></p>",
+            '<p><choice type="chaya"><seg xml:lang="pra" /><seg xml:lang="sa">foo</seg></choice></p>',
+        ),
+        (
+            "<p><chaya>[foo]</chaya></p>",
+            '<p><choice type="chaya"><seg xml:lang="pra" /><seg xml:lang="sa" rend="brackets">foo</seg></choice></p>',
+        ),
+        (
+            "<p><chaya> [ foo ] </chaya></p>",
+            '<p><choice type="chaya"><seg xml:lang="pra" /><seg xml:lang="sa" rend="brackets">foo</seg></choice></p>',
+        ),
+    ],
+)
+def test_rewrite_block_to_tei_xml__chaya(input, expected):
     xml = ET.fromstring(input)
     s._rewrite_block_to_tei_xml(xml, 42)
     actual = ET.tostring(xml)

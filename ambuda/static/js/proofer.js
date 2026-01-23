@@ -337,7 +337,10 @@ export default () => ({
     const filtered = this.getFilteredCommands();
     if (filtered[index]) {
       filtered[index].action();
-      this.closeModal();
+      if (this.activeModal === ModalType.CommandPalette) {
+        // without this guard, alpine closes the wrong modal (eg transliterator)
+        this.closeModal();
+      }
     }
   },
 

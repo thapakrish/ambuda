@@ -1,4 +1,4 @@
-"""Utilities for manual text structuring."""
+"""Utilities for structuring text and converting it to TEI-confor XML."""
 
 import copy
 import dataclasses as dc
@@ -108,18 +108,72 @@ VALIDATION_SPECS = {
 }
 
 
+class TEITag(StrEnum):
+    TITLE = "title"
+    HEAD = "head"
+    TRAILER = "trailer"
+
+    LG = "lg"
+    P = "p"
+
+    SP = "sp"
+    STAGE = "stage"
+    SPEAKER = "stage"
+
+    CHOICE = "choice"
+    SEG = "seg"
+    SIC = "sic"
+    CORR = "corr"
+    SUPPLIED = "supplied"
+
+    REF = "ref"
+    NOTE = "note"
+
+
+# TODO: this is unused. hook it up somewhere.
+TEI_XML_VALIDATION_SPEC = {
+    TEITag.SP: ValidationSpec(
+        children={TEITag.SPEAKER, TEITag.P, TEITag.LG, TEITag.STAGE}, attrib={"n"}
+    ),
+    TEITag.STAGE: ValidationSpec(children=set(), attrib={"rend"}),
+    TEITag.LG: ValidationSpec(children={"l", "note", "choice", "ref"}, attrib={"n"}),
+    TEITag.P: ValidationSpec(children={"note", "choice", "ref"}, attrib={"n"}),
+    TEITag.CHOICE: ValidationSpec(
+        children={TEITag.SEG, TEITag.CORR, TEITag.SIC}, attrib={"type"}
+    ),
+    TEITag.SEG: ValidationSpec(children=set(), attrib={"xml:lang"}),
+    TEITag.HEAD: ValidationSpec(children=set(), attrib=set()),
+    TEITag.TITLE: ValidationSpec(children=set(), attrib=set()),
+    TEITag.TRAILER: ValidationSpec(children=set(), attrib=set()),
+}
+
+
 @dc.dataclass
 class IndexedBlock:
-    # Revision
+    """A block of proofing XML, as seen during iteration."""
+
+    # The revision this block comes from.
     revision: db.Revision
-    # 1-indexed image number
+    # 1-indexed image number (for page numbers)
     image_number: int
     # 0-indexed block index within the page
     block_index: int
+    # the raw page XML
     page_xml: ET.Element
 
 
 class Filter:
+    """Selects a project's blocks based on the given condition (`sexp`).
+
+    Options:
+    - `image` -- matches a range of image numberS
+    - `label` -- matches blocks by label
+    - `tag` -- matches blocks by tag (p, verse, ...)
+    - `and` -- logical AND of multiple conditions
+    - `or` -- logical OR of multiple conditions
+    - `not` -- logical NOT of a condition
+    """
+
     def __init__(self, sexp: str):
         sexp = sexp.strip()
         if not sexp:
@@ -158,10 +212,15 @@ class Filter:
         self.predicate = parse_list()
 
     def matches(self, block: IndexedBlock) -> bool:
+        """Return whether `block` matches this filter's condition.
+
+        If the filter is misconfigured, return `False`.
+        """
+
         def _matches(sexp):
             try:
                 key = sexp[0]
-                if key == "image":
+                if key == "image" or key == "page":
                     start = sexp[1]
                     try:
                         end = sexp[2]
@@ -181,15 +240,13 @@ class Filter:
                     return any(_matches(x) for x in sexp[1:])
                 if key == "not":
                     return not _matches(sexp[1])
-                if key == "page":
-                    return int(sexp[1]) <= block.image_number <= int(sexp[2])
             except Exception as e:
                 return False
 
         return _matches(self.predicate)
 
 
-def validate_page_xml(content: str) -> list[ValidationResult]:
+def validate_proofing_xml(content: str) -> list[ValidationResult]:
     results = []
 
     try:
@@ -235,9 +292,7 @@ def validate_page_xml(content: str) -> list[ValidationResult]:
                 )
             _validate_element(child, child.tag, current_path)
 
-    # Immediate children should be a known type (for dropdown support)
     _validate_element(root, "page")
-
     return results
 
 
@@ -425,6 +480,25 @@ def is_verse(text: str) -> bool:
     else:
         return False
 
+@dc.dataclass
+class ProofProject:
+    """A structured project from the proofreading environment."""
+
+    pages: list[ProofPage]
+
+    @staticmethod
+    def from_revisions(revisions: list[db.Revision]) -> "ProofProject":
+        """Create structured data from a project's latest revisions."""
+        pages = []
+        for revision in revisions:
+            try:
+                page = ProofPage._from_xml_string(revision.content, revision.page_id)
+            except Exception as e:
+                continue
+            page.id = revision.page_id
+            pages.append(page)
+        return ProofProject(pages=pages)
+
 
 def detect_language(text: str) -> str:
     """Detect the text language with basic heuristics."""
@@ -471,28 +545,6 @@ class TEIDocument:
     sections: list[TEISection]
 
 
-@dc.dataclass
-class ProofProject:
-    """A structured project from the proofreading environment."""
-
-    pages: list[ProofPage]
-
-    @staticmethod
-    def from_revisions(revisions: list[db.Revision]) -> "ProofProject":
-        """Create structured data from a project's latest revisions."""
-        pages = []
-        for revision in revisions:
-            try:
-                page = ProofPage._from_xml_string(revision.content, revision.page_id)
-            except Exception as e:
-                continue
-
-            page.id = revision.page_id
-            pages.append(page)
-
-        return ProofProject(pages=pages)
-
-
 # TODO:
 # - keep <l>-final "-" and mark as appropriate elem
 # x concatenate within <sp> for speaker
@@ -505,11 +557,12 @@ def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
     # TODO: move this elsewhere?
     for el in xml.iter():
         if el.tag == InlineType.STAGE:
-            # Remove whitespace around () for stage directions
-            text = el.text or ""
-            text = re.sub(r"\(\s*", "", text)
-            text = re.sub(r"\s*\)", "", text)
-            el.text = text.strip()
+            # Remove () for stage directions
+            text = (el.text or "").strip()
+            normed_text = re.sub(r"\(\s*(.*?)\s*\)", r"\1", text)
+            if text != normed_text:
+                el.attrib["rend"] = "parentheses"
+            el.text = normed_text.strip()
             # add whitespace before following element
             if el.tail and el.tail[0] != " ":
                 el.tail = " " + el.tail
@@ -517,13 +570,14 @@ def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
             # Remove trailing "-" for speakers
             text = el.text or ""
             text = re.sub(r"(.*?)\s*[-–]+\s*$", r"\1", text)
-            el.text = text
+            el.text = text.strip()
         elif el.tag == InlineType.CHAYA:
             # Remove surrounding [ ] brackets.
             text = (el.text or "").strip()
-            text = re.sub(r"^\[\s*", "", text)
-            text = re.sub(r"\s*\]$", "", text)
-            el.text = text
+            normed_text = re.sub(r"^\[\s*(.*)\s*\]", r"\1", text)
+            if text != normed_text:
+                el.attrib["rend"] = "brackets"
+            el.text = normed_text.strip()
         elif el.tag == BlockType.VERSE:
             # Add consistent spacing around double dandas.
             text = (el.text or "").strip()
@@ -643,6 +697,8 @@ def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
 
             sanskrit = ET.SubElement(choice, "seg")
             sanskrit.attrib["xml:lang"] = "sa"
+            if "rend" in chaya.attrib:
+                sanskrit.attrib["rend"] = chaya.attrib["rend"]
             sanskrit.text = chaya.text
             sanskrit.extend(chaya)
 
