@@ -463,7 +463,7 @@ class BlockView {
 
     // Create content area
     this.contentDOM = document.createElement('div');
-    this.contentDOM.className = 'w-full p-2 border border-slate-200 bg-white rounded font-normal min-h-[3rem] focus:outline-none focus:ring-2 focus:ring-blue-400 whitespace-pre-wrap';
+    this.contentDOM.className = 'pm-content-dom';
     this.contentDOM.style.fontSize = `${this.editor.textZoom}rem`;
     this.contentDOM.contentEditable = 'true';
     this.dom.appendChild(this.contentDOM);

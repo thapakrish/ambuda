@@ -101,13 +101,13 @@ recruit more volunteers. Every little bit helps!
 
 {% set url = url_for("proofing.index") %}
 {% set register = url_for("auth.register") %}
-{% set beginners = url_for("proofing.beginners_guide") %}
+{% set beginners = url_for("proofing.guidelines") %}
 
 <section class="p-4 my-4 bg-slate-100 a-underline">
 <p class="font-bold mb-4">{{ _('How to get started:') }}</p>
 <ol class="list-decimal pl-6">
   <li>{{ _('<a href="{{ register }}">Create</a> a proofing account.') }}</li>
-  <li>{{ _('Read our <a href="{{ beginners }}">beginner\'s guide</a>.') }}</li>
+  <li>{{ _('Read our <a href="' + beginners + '">proofing guide</a>.') }}</li>
   <li>{{ _('Start proofing!') }}</li>
 </ol>
 </section>

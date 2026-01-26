@@ -210,7 +210,10 @@ def edit_post(project_slug, page_slug):
         new_content = form.content.data
 
         cur_page = ctx.cur
-        cur_content = cur_page.revisions[-1].content
+        if cur_page.revisions:
+            cur_content = cur_page.revisions[-1].content
+        else:
+            cur_content = None
         content_has_changed = cur_content != new_content
 
         status_has_changed = cur_page.status.name != form.status.data
@@ -484,7 +487,7 @@ def _mark_stage_directions(text, block):
 
 def _mark_speakers(text, block):
     """Mark speakers with ^.*[-] pattern."""
-    pattern = r"^(.*?[-–])"
+    pattern = r"^(\S+\s*[-–])"
     replacement = r"<speaker>\1</speaker>"
     return re.sub(pattern, replacement, text, flags=re.MULTILINE)
 

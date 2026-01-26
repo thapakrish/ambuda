@@ -1,0 +1,188 @@
+{% extends 'base-text.html' %}
+
+
+{% block title %}{{ _('Unproofed texts') }} {{ _('| Ambuda') }}{% endblock %}
+
+
+{% block content %}
+<div class="prose">
+<h1>{{ _('Proofing guidelines') }}</h1>
+
+<p><em>(This page is a rough draft. Please report rough edges to the team.)</em></p>
+
+<p>This page describes Ambuda's proofing guidelines. All proofers must know and apply these
+guidelines when proofing texts on Ambuda.
+
+<p>Please read this page carefully! The information here is critical to Ambuda's mission.
+
+
+<h2>Core principles</h2>
+
+<p><strong>Don't change what the page says.</strong> Follow the conventions of the text as exactly
+as possible. Corrections and cleanup will come later.
+
+<p>Examples:</p>
+
+<ul>
+  <li>
+  <p><strong>Spelling.</strong> If the page says {{ 'kAryyate'|d }} or {{ 'saGgacchati'|d }}, then we
+  write {{ 'kAryyate'|d }} (not {{ 'kAryate'|d }}) and {{ 'saGgacchati'|d }} (not {{ 'saMgacchati'|d }}).
+  If the page says <i>çru</i>, then we should write <i>çru</i> and not <i>śru</i>.
+
+  <li>
+  <p><strong>Typos.</strong> If the page has mistakes, include those mistakes as-is. We will clean
+  them up later.
+
+  <li>
+  <p><strong>Line breaks.</strong> Preserve line breaks and hyphens exactly as they appear on the
+  original page.
+
+  <li>
+  <p><strong>Script.</strong> If the page uses Devanagari, we should use Devanagari, not Roman script
+  or some other convention.
+
+  <li>
+  <p><strong>Whitespace.</strong> Preserve line breaks and spaces between words. If the page doesn't
+  have a space between two words, don't add a space.
+
+  <li>
+  <p><strong>Word splitting.</strong> Different texts apply sandhi rules in different ways. Follow
+  the conventions of the page regardless of personal preference.
+
+  <li>
+  <p><strong>Secondary content.</strong> Include footnotes, spurious verses, and all other meaningful
+  content that appears on the page.
+</ul>
+
+<p>Exceptions:</p>
+
+<ul>
+  <li><p><strong>Irrelevant content.</strong> Ignore page numbers, repetitive page headers and
+  footers, stamps, handwritten notes, and any other content that is irrelevant to the text.</p>
+
+  <p>Some pages are also irrelevant and can be marked as <kbd>Not relevant</kbd> to exclude them
+  from the final text. Examples include index pages, prefaces, publication details, appendices, and
+  so on.</p>
+
+  <li><p><strong>Irrelevant whitespace.</strong> Whitespace between words or between paragraphs is
+  important because it encodes semantic information. Whitespace around punctuation marks is not
+  interesting and will be normalized when we publish the text. Do your best to match the page, but
+  don't fuss about matching it exactly.</li>
+
+  <li><p><strong>Special instructions.</strong> If the project has special instructions, such as
+  "ignore this commentary" or "ignore footnotes," follow those instructions.</li>
+
+  {% set glyph = "https://en.wikipedia.org/wiki/Devanagari#Old_forms" %}
+
+  <li><p><strong>Glyph variants.</strong> Different typefaces may represent letters like {{ 'a'|d }}
+  in different ways. <a href="{{ glyph }}">(Examples.)</a> Unicode does not support this distinction,
+  so neither do we.</p></li>
+
+  <li><p><strong>Zero-width joiner.</strong> Unicode supports a "zero-width joiner" that lets us
+  break apart certain conjunct characters. For example, we can use a zero-width joiner to display
+  the conjunct {{ 'kSa'|d }} as &#x0915;&#x094d;&zwj;&#x0937;. This difference is tedious to
+  represent and does not change the phonetics of a given word. If you see a word that requires a
+  zero-width joiner, you do not need to insert it.</p></li>
+</ul>
+
+
+
+<h2>Structuring the page</h2>
+
+<p>Once we have an exact version of the text on the phase, we <dfn>structure</dfn> the page content
+and <dfn>correct</dfn> any mistakes the page has. First we will describe structuring.</p>
+
+<p>Structuring has two parts. First, we split the text into <dfn>blocks</dfn> and describe the type
+of each block. Here are our basic block types:</p>
+
+<ul>
+
+<li><p><dfn>Ignore</dfn> &mdash; For irrelevant content (as defined above). This will be removed
+from the final output.
+
+<li><p><dfn>Paragraph</dfn> &mdash; For all prose content. This is the default type for all text.
+Each paragraph must be in its own block.
+
+<li><p><dfn>Verse</dfn> &mdash; For metrical content, including partial verses. Each verse must
+be in its own block.
+
+<li><p><dfn>Footnote</dfn> &mdash; For footnotes. Each footnote must be in its own block. The first
+token in the block must be the footnote number, e.g. <kbd>{{ '1'|d }}.</kbd> or <kbd>{{ '(ka)'|d }}</kbd>.
+
+<li><p><dfn>Title</dfn> &mdash; For the title of a text. Typically a text has at most one title.
+
+<li><p><dfn>Subtitle</dfn> &mdash; For the subtitle of a text. Typically a subtitle appears just
+above or below a title. Each subtitle must be in its own block.
+
+<li><p><dfn>Heading</dfn> &mdash; For headings within a text.
+
+<li><p><dfn>Trailer</dfn> &mdash; For verses or sayings that end a text section.
+
+<li><p><dfn>Metadata</dfn> &mdash; A specialized block used by Ambuda admins to prepare a text for
+publishing.
+
+</ul>
+
+<p>Second, we mark up text within each block. Markup is typically useful only for specialized texts
+like plays. All markup types are available under <kbd>Edit &rarr; Mark as</kbd> in the editor.</p>
+
+<p>Basic markup types:</p>
+
+<ul>
+<li><p><dfn>Footnote number</dfn> &mdash; a reference to a specific footnote.
+</ul>
+
+<p>Specialized markup types for plays:</p>
+
+<ul>
+<li><p><dfn>Speaker</dfn> &mdash; the person speaking.
+
+<li><p><dfn>Stage</dfn> &mdash; a stage direction.
+
+<li><p><dfn>Chaya</dfn> &mdash; a Sanskrit translation of Prakrit speech.
+
+<li><p><dfn>Prakrit</dfn> &mdash; Prakrit speech. If some text in a block is annotated as
+<kbd>chaya</kbd>, all other text in the block is treated as prakrit. This annotation is useful only
+if a character switches between Sanskrit and Prakrit, so that we can mark which text the chaya
+corresponds to.
+</ul>
+
+<p>Specialized options that we need to document better:</p>
+
+<ul>
+<li>
+<p><kbd>View &rarr; Show advanced options</kbd> then <kbd>merge next</kbd> &mdash; Indicates that
+a block continues onto the next page.
+
+</li>
+</ul>
+
+
+<h2>Correcting the page</h2>
+
+<p>We make corrections to the page through three different markup options:</p>
+
+<ul>
+<li><p><dfn>Error</dfn> &mdash; marks erroneous text. This will be removed from the final output.
+
+<li><p><dfn>Fix</dfn> &mdash; marks a correction to the text.
+
+<li><p><dfn>Unclear</dfn> &mdash; marks text that is unclear or hard to understand. This will be
+included in the final output but flagged for review by more experienced proofers.
+</ul>
+
+
+<h2>Saving your changes</h2>
+
+<p>When you save your changes, you must choose a status to represent the state of the page.</p>
+
+<p>Options:</p>
+
+<ul>
+<li><dfn>Needs more work</dfn> &mdash; The page needs additional work or review.</li>
+<li><dfn>Proofed once</dfn> &mdash; The page is correct to the best of your judgment.</li>
+<li><dfn>Not relevant</dfn> &mdash; The page is not relevant to the text. Examples: index pages,
+blank pages, publication details, forewords, prefaces, and appendices.</li>
+</ul>
+
+{% endblock %}

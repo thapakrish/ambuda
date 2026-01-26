@@ -197,6 +197,15 @@
         {{ _dropdown_item('openHistoryModal', _('Show all history')) }}
       {% endcall %}
     </div>
+
+    <div class="relative">
+      {{ _dropdown_button('help', pgettext('editor', 'Help')) }}
+      <div x-show="activeMenu === 'help'" @mousedown.outside="activeMenu = null" class="dropdown-pane w-48">
+        <a href="{{ url_for("proofing.guidelines") }}" target="_blank" class="dropdown-item">
+          {{ _('Proofing guidelines') }}
+        </a>
+      </div>
+    </div>
     </div>
 
     {# Right-aligned (username, sign in) #}

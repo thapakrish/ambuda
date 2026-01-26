@@ -140,6 +140,8 @@ def test_validate_proofing_xml(input, expected):
             "<p><speaker>foo</speaker>bar-\nbiz</p>",
             "<sp><speaker>foo</speaker><p>barbiz</p></sp>",
         ),
+        # <flag> --> <unclear>
+        ("<p><flag>foo</flag></p>", "<p><unclear>foo</unclear></p>"),
         # No content --> don't preserve the <p>.
         ("<p> <speaker>foo</speaker> </p>", "<sp><speaker>foo</speaker></sp>"),
         (

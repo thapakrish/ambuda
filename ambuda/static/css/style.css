@@ -176,6 +176,9 @@
     outline: none;
   }
 
+  .pm-content-dom {
+    @apply w-full p-2 border border-slate-200 bg-white rounded font-normal min-h-[3rem] focus:outline-none focus:ring-2 focus:ring-blue-400 whitespace-pre-wrap;
+  }
   .pm-html-tag {
     @apply text-xs p-0.5 rounded bg-blue-100 text-blue-800 rounded;
   }

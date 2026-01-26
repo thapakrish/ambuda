@@ -206,20 +206,20 @@ def index():
 
 @bp.route("/help/beginners-guide")
 def beginners_guide():
-    """Display our minimal proofing guidelines."""
+    """[deprecated] Display our minimal proofing guidelines."""
     return render_template("proofing/beginners-guide.html")
 
 
 @bp.route("/help/complete-guide")
 def complete_guide():
-    """Display our complete proofing guidelines."""
+    """[deprecated] Display our complete proofing guidelines."""
     return render_template("proofing/complete-guide.html")
 
 
-@bp.route("/help/editor-guide")
-def editor_guide():
-    """Describe how to use the page editor."""
-    return render_template("proofing/editor-guide.html")
+@bp.route("/help/proofing-guide")
+def guidelines():
+    """Display our complete proofing guidelines."""
+    return render_template("proofing/guidelines.html")
 
 
 @bp.route("/create-project", methods=["GET", "POST"])

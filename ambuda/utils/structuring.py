@@ -420,6 +420,8 @@ def _rewrite_block_to_tei_xml(xml: ET.Element, image_number: int):
             # Assign a temporary id for cross-referencing later.
             el.attrib["type"] = "noteAnchor"
             el.attrib["target"] = f"{image_number}.{el.text or ''}"
+        elif el.tag == "flag":
+            el.tag = "unclear"
 
     # <speaker>
     try:
