@@ -16,10 +16,6 @@ from pathlib import Path
 
 import requests
 
-# NOTE: `fitz` is the internal package name for PyMuPDF. PyPI hosts another
-# package called `fitz` (https://pypi.org/project/fitz/) that is completely
-# unrelated to PDF parsing.
-import fitz
 from slugify import slugify
 from sqlalchemy import select
 
@@ -47,6 +43,8 @@ def _save_page_image(
     :param output_path: where to write the image.
     :param dpi: resolution for rendering.
     """
+    import fitz
+
     doc = fitz.open(pdf_path)
     page = doc.load_page(page_index)
     pix = page.get_pixmap(dpi=dpi)
@@ -67,6 +65,8 @@ def _split_pdf_into_pages(
     :param output_dir: the directory to which we'll write these images.
     :return: a list of UUIDs for each page, in order.
     """
+    import fitz
+
     doc = fitz.open(pdf_path)
     num_pages = doc.page_count
     doc.close()
@@ -761,6 +761,8 @@ def regenerate_project_pages_inner(
                 )
             s3_pdf_path.download_file(str(pdf_path))
 
+            import fitz
+
             doc = fitz.open(pdf_path)
             num_pages = doc.page_count
             doc.close()
@@ -865,6 +867,8 @@ def replace_project_pdf_inner(
             select(db.Page).filter_by(project_id=project.id).order_by(db.Page.order)
         )
         existing_pages = list(session.scalars(pages_stmt).all())
+
+        import fitz
 
         doc = fitz.open(pdf_path)
         new_count = doc.page_count

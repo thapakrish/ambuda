@@ -1,7 +1,5 @@
 """Utilities for LLM-based text structuring."""
 
-from google import genai
-
 GEMINI_MODEL = "gemini-3-flash-preview"
 
 
@@ -69,6 +67,8 @@ def run(
     if not api_key:
         raise ValueError("GEMINI_API_KEY not configured")
 
+    from google import genai
+
     client = genai.Client(api_key=api_key)
     prompt = prompt_template.format(content=content)
     response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
@@ -133,6 +133,8 @@ def run_batch(
         instructions=instructions,
         pages="\n\n".join(page_sections),
     )
+
+    from google import genai
 
     client = genai.Client(api_key=api_key)
     response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)

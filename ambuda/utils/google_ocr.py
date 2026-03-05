@@ -10,9 +10,6 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from google.cloud import vision
-from google.cloud.vision_v1 import AnnotateImageResponse
-
 from ambuda import database as db
 from ambuda.utils import s3
 
@@ -41,10 +38,10 @@ def post_process(text: str) -> str:
     )
 
 
-def prepare_image(
-    page: db.Page, s3_bucket: str | None, cloudfront_base_url: str | None
-) -> vision.Image | None:
+def prepare_image(page: db.Page, s3_bucket: str | None, cloudfront_base_url: str | None):
     """Read an image into a protocol buffer for the OCR request."""
+    from google.cloud import vision
+
     if s3.is_local and s3_bucket:
         image_bytes = page.s3_path(s3_bucket).read_bytes()
         return vision.Image(content=image_bytes)
@@ -65,6 +62,8 @@ def serialize_bounding_boxes(boxes: list[tuple[int, int, int, int, str]]) -> str
 
 def debug_dump_response(response):
     """A handy debug function that dumps the OCR response to a JSON file."""
+    from google.cloud.vision_v1 import AnnotateImageResponse
+
     with open("out.json", "w") as f:
         f.write(AnnotateImageResponse.to_json(response))
 
@@ -78,6 +77,8 @@ def run(
         bounding boxes.
     """
     logging.debug(f"Starting full text annotation for page {page.id}")
+
+    from google.cloud import vision
 
     client = vision.ImageAnnotatorClient()
     image = prepare_image(page, s3_bucket, cloudfront_base_url)
