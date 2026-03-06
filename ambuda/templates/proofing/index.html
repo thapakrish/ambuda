@@ -29,21 +29,17 @@
 
 <div class="flex flex-col md:flex-row gap-6">
 
-  <form method="get" action="{{ url_for('proofing.index') }}"
-      class="md:w-56 shrink-0" id="filter-form">
+  <form method="get" action="{{ url_for('proofing.index') }}" id="filter-form">
+    {% call m.sidebar_panel() %}
 
-    <div class="border rounded bg-slate-50 p-3 space-y-4 text-sm">
-
-      <div>
-        <label class="block font-medium text-slate-700 mb-1">{{ _('Search') }}</label>
+      {% call m.sidebar_field(_('Search')) %}
         <input type="text" name="q" value="{{ search }}"
            placeholder="{{ _('Project title...') }}"
            class="w-full p-1.5 rounded border">
-      </div>
+      {% endcall %}
 
       {% if current_user.is_p2 %}
-      <div>
-        <label class="block font-medium text-slate-700 mb-1">{{ _('Status') }}</label>
+      {% call m.sidebar_field(_('Status')) %}
         <select name="status" class="w-full bg-white p-1.5 rounded border">
           <option value="active" {% if status_filter == 'active' %}selected{% endif %}>{{ _('Active') }}</option>
           <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>{{ _('Pending') }}</option>
@@ -52,27 +48,25 @@
           <option value="closed-duplicate" {% if status_filter == 'closed-duplicate' %}selected{% endif %}>{{ _('Closed (duplicate)') }}</option>
           <option value="closed-quality" {% if status_filter == 'closed-quality' %}selected{% endif %}>{{ _('Closed (quality)') }}</option>
         </select>
-      </div>
+      {% endcall %}
       {% endif %}
 
       {% if genres %}
-      <div>
-        <label class="block font-medium text-slate-700 mb-1">{{ _('Genre') }}</label>
+      {% call m.sidebar_field(_('Genre')) %}
         <select name="genre" class="w-full bg-white p-1.5 rounded border">
           <option value="">{{ _('All genres') }}</option>
           {% for g in genres %}
           <option value="{{ g.id }}" {% if genre_id == g.id %}selected{% endif %}>{{ g.name }}</option>
           {% endfor %}
         </select>
-      </div>
+      {% endcall %}
       {% endif %}
 
       {# Hidden input carries the selected tag value #}
       <input type="hidden" name="tag" id="filter-tag" value="{{ tag_id or '' }}">
 
       {% if tags %}
-      <div>
-        <label class="block font-medium text-slate-700 mb-1">{{ _('Tags') }}</label>
+      {% call m.sidebar_field(_('Tags')) %}
         <div class="flex flex-wrap gap-1" id="tag-cloud">
           {% for t in tags %}
           {% set count = tag_counts.get(t.id, 0) %}
@@ -86,16 +80,15 @@
           {% endif %}
           {% endfor %}
         </div>
-      </div>
+      {% endcall %}
       {% endif %}
 
-      <div>
-        <label class="block font-medium text-slate-700 mb-1">{{ _('Sort by') }}</label>
+      {% call m.sidebar_field(_('Sort by')) %}
         <select name="sort" class="w-full bg-white p-1.5 rounded border">
           <option value="title" {% if sort_field == 'title' %}selected{% endif %}>{{ _('Title') }}</option>
           <option value="created" {% if sort_field == 'created' %}selected{% endif %}>{{ _('Creation date') }}</option>
         </select>
-      </div>
+      {% endcall %}
 
       <div>
         <select name="sort_dir" class="w-full bg-white p-1.5 rounded border">
@@ -118,7 +111,8 @@
         {{ _('Reset filters') }}
       </a>
       {% endif %}
-    </div>
+
+    {% endcall %}
   </form>
 
   <div class="flex-1 min-w-0"

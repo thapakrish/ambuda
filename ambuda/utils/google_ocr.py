@@ -38,7 +38,9 @@ def post_process(text: str) -> str:
     )
 
 
-def prepare_image(page: db.Page, s3_bucket: str | None, cloudfront_base_url: str | None):
+def prepare_image(
+    page: db.Page, s3_bucket: str | None, cloudfront_base_url: str | None
+):
     """Read an image into a protocol buffer for the OCR request."""
     from google.cloud import vision
 

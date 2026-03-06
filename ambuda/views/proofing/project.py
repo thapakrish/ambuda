@@ -190,6 +190,14 @@ class EditMetadataForm(FlaskForm):
             "placeholder": _l("The year in which this specific edition was published."),
         },
     )
+    publication_location = StringField(
+        _l("Publication location"),
+        render_kw={
+            "placeholder": _l(
+                "The city where this edition was published, e.g. Bombay."
+            ),
+        },
+    )
 
     notes = StringField(
         _l("Notes (optional)"),

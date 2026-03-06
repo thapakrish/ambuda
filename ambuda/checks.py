@@ -5,11 +5,11 @@ import sys
 from click import style
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session as SASession
 from sqlalchemy.schema import Column
 
 from ambuda import consts, enums
 from ambuda import database as db
-from ambuda import queries as q
 from ambuda.models.base import Base
 
 
@@ -145,9 +145,12 @@ def _check_bot_user(session) -> list[str]:
 def _check_database_engine(engine: Engine):
     errors = _check_app_schema_matches_db_schema(engine)
 
-    session = q.get_session()
-    errors += _check_lookup_tables(session)
-    errors += _check_bot_user(session)
+    # Use a temporary session from the provided engine rather than the
+    # global cached session, which would leak a shared connection pool
+    # into forked gunicorn workers when using --preload.
+    with SASession(engine) as session:
+        errors += _check_lookup_tables(session)
+        errors += _check_bot_user(session)
 
     if errors:
         _warn("The data tables defined in your application code don't match the")

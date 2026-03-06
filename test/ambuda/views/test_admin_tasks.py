@@ -388,6 +388,7 @@ def test_import_projects_and_export_projects(admin_client):
             "editor": "Test Editor",
             "publisher": "",
             "publication_year": "",
+            "publication_location": "",
             "worldcat_link": "",
             "source_url": None,
             "description": "",

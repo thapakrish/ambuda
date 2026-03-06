@@ -10,115 +10,136 @@
 {{ m.header(_('Texts')) }}
 {{ m.proofing_tabs('texts', current_user) }}
 
-{% if all_texts %}
 {{ i.i_exclamation_circle() }}
 
-{% macro sort_header(field, label) %}
-<th class="px-3 py-2 cursor-pointer select-none hover:text-slate-900"
-    @click="sortBy('{{ field }}')">
-  <span class="inline-flex items-center gap-1">
-    {{ label }}
-    <template x-if="field === '{{ field }}' && order === 'asc'">
-      <span class="text-sky-600">&#9650;</span>
-    </template>
-    <template x-if="field === '{{ field }}' && order === 'desc'">
-      <span class="text-sky-600">&#9660;</span>
-    </template>
-    <template x-if="field !== '{{ field }}'">
-      <span class="text-slate-300 inline-flex flex-col leading-none text-[0.5rem]">&#9650;<br>&#9660;</span>
-    </template>
-  </span>
-</th>
-{% endmacro %}
+<div class="flex flex-col md:flex-row gap-6">
 
-<div x-data="sortableList('title')">
+  <form method="get" action="{{ url_for('proofing.texts') }}" id="texts-filter-form">
+    {% call m.sidebar_panel() %}
 
-<form class="border p-2 bg-slate-100 rounded text-sm" x-cloak @submit.prevent>
-  <input type="text" placeholder="{{ _('Search for a text title') }}" x-model="query"
-     class="p-1 rounded border w-full" @keyup="filter">
-</form>
+      {% call m.sidebar_field(_('Search')) %}
+        <input type="text" name="q" value="{{ search }}"
+           placeholder="{{ _('Text title...') }}"
+           class="w-full p-1.5 rounded border">
+      {% endcall %}
 
-<div class="overflow-x-auto mt-4">
-  <table class="min-w-full text-sm">
-    <thead>
-      <tr class="border-b text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-        {{ sort_header('title', _('Text')) }}
-        {{ sort_header('project', _('Project')) }}
-        {{ sort_header('created', _('Created')) }}
-        <th class="px-3 py-2">{{ _('Tags') }}</th>
-        <th class="px-3 py-2">{{ _('Report') }}</th>
-      </tr>
-    </thead>
-    <tbody x-ref="list">
-      {% for text in all_texts %}
-      {% set report = report_map.get(text.id) %}
-      <tr data-key="{{ text.id }}"
-          data-title="{{ text.title }}"
-          data-project="{{ text.project.display_title if text.project else '' }}"
-          data-created="{{ text.created_at or '' }}"
-          x-show="displayed.has('{{ text.id }}')"
-          class="border-b border-gray-100 hover:bg-slate-50">
-        <td class="px-3 py-2.5">
-          <a href="{{ url_for('texts.text', slug=text.slug) }}" class="text-sky-900 hover:underline font-medium">
-            {{ text.title }}
-          </a>
-          {% if text.is_p0 %}{{ i.unproofed_text_icon() }}{% endif %}
-        </td>
-        <td class="px-3 py-2.5 text-slate-500">
-          {% if text.project %}
-            <a href="{{ url_for('proofing.project.summary', slug=text.project.slug) }}" class="hover:underline">{{ text.project.display_title }}</a>
-          {% else %}
-            <span class="text-slate-300">&mdash;</span>
-          {% endif %}
-        </td>
-        <td class="px-3 py-2.5 text-slate-500 whitespace-nowrap">
-          {% if text.created_at %}
-            {{ text.created_at.strftime('%Y-%m-%d') }}
-          {% else %}
-            <span class="text-slate-300">&mdash;</span>
-          {% endif %}
-        </td>
-        <td class="px-3 py-2.5">
-          <a href="{{ url_for('proofing.tagging.text', text_slug=text.slug) }}" class="text-sky-900 hover:underline text-xs">{{ _('Tags') }}</a>
-        </td>
-        <td class="px-3 py-2.5">
-          {% if report %}
-            {% set num_ok = report.groups | map(attribute='results') | sum(start=[]) | map(attribute='num_ok') | sum %}
-            {% set num_total = report.groups | map(attribute='results') | sum(start=[]) | map(attribute='num_total') | sum %}
-            {% if num_ok == num_total %}
-              <a href="{{ url_for('proofing.text_report', slug=text.slug) }}"
-                 class="inline-block text-xs font-medium px-2 py-0.5 rounded bg-green-100 text-green-800 hover:bg-green-200">
-                {{ num_ok }}/{{ num_total }}
-              </a>
-            {% elif num_ok == 0 %}
-              <a href="{{ url_for('proofing.text_report', slug=text.slug) }}"
-                 class="inline-block text-xs font-medium px-2 py-0.5 rounded bg-red-100 text-red-800 hover:bg-red-200">
-                {{ num_ok }}/{{ num_total }}
-              </a>
-            {% else %}
-              <a href="{{ url_for('proofing.text_report', slug=text.slug) }}"
-                 class="inline-block text-xs font-medium px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 hover:bg-yellow-200">
-                {{ num_ok }}/{{ num_total }}
-              </a>
-            {% endif %}
-          {% else %}
-            <a href="{{ url_for('proofing.text_report', slug=text.slug) }}"
-               class="inline-block text-xs font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-500 hover:bg-slate-200">
-              missing
-            </a>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+      {% call m.sidebar_field(_('Sort by')) %}
+        <select name="sort" class="w-full bg-white p-1.5 rounded border">
+          <option value="title" {% if sort_field == 'title' %}selected{% endif %}>{{ _('Title') }}</option>
+          <option value="project" {% if sort_field == 'project' %}selected{% endif %}>{{ _('Project') }}</option>
+          <option value="created" {% if sort_field == 'created' %}selected{% endif %}>{{ _('Created') }}</option>
+        </select>
+      {% endcall %}
+
+      <div>
+        <select name="sort_dir" class="w-full bg-white p-1.5 rounded border">
+          <option value="asc" {% if sort_dir == 'asc' %}selected{% endif %}>{{ _('Ascending') }}</option>
+          <option value="desc" {% if sort_dir == 'desc' %}selected{% endif %}>{{ _('Descending') }}</option>
+        </select>
+      </div>
+
+      <noscript>
+        <button type="submit"
+            class="w-full bg-sky-900 text-white px-3 py-1.5 rounded hover:bg-sky-800">
+          {{ _('Apply') }}
+        </button>
+      </noscript>
+
+      {% if search or sort_field != 'title' or sort_dir != 'asc' %}
+      <a href="{{ url_for('proofing.texts') }}" id="reset-filters"
+         class="block text-center text-sm text-slate-500 hover:text-slate-700">
+        {{ _('Reset filters') }}
+      </a>
+      {% endif %}
+
+    {% endcall %}
+  </form>
+
+  <div class="flex-1 min-w-0" id="texts-list">
+    {% include "proofing/texts_table.html" %}
+  </div>
+
 </div>
 
-{% else %}
-<div class="prose">
-  <p>{{ _('No texts have been published yet.') }}</p>
-</div>
-{% endif %}
+<script>
+(function() {
+  var form = document.getElementById('texts-filter-form');
+  var container = document.getElementById('texts-list');
+  if (!form || !container) return;
+
+  var timer = null;
+
+  function getCleanParams() {
+    var params = new URLSearchParams(new FormData(form));
+    var clean = new URLSearchParams();
+    params.forEach(function(v, k) { if (v) clean.set(k, v); });
+    return clean;
+  }
+
+  function doFetch(extraParams) {
+    var clean = getCleanParams();
+    if (extraParams) {
+      extraParams.forEach(function(v, k) { clean.set(k, v); });
+    }
+    clean.set('partial', '1');
+
+    fetch(form.action + '?' + clean.toString())
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        container.innerHTML = data.html;
+        clean.delete('partial');
+        var qs = clean.toString();
+        var newUrl = form.action + (qs ? '?' + qs : '');
+        history.replaceState(null, '', newUrl);
+        bindPaginationLinks();
+      });
+  }
+
+  function bindPaginationLinks() {
+    container.querySelectorAll('.pagination-link').forEach(function(link) {
+      link.addEventListener('click', function(e) {
+        e.preventDefault();
+        var url = new URL(link.href);
+        var page = url.searchParams.get('page');
+        doFetch(new URLSearchParams({ page: page }));
+      });
+    });
+  }
+
+  // Select/dropdown changes: immediate fetch.
+  form.querySelectorAll('select').forEach(function(el) {
+    el.addEventListener('change', function() { clearTimeout(timer); doFetch(); });
+  });
+
+  // Text input: debounced.
+  var searchInput = form.querySelector('input[name="q"]');
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      clearTimeout(timer);
+      timer = setTimeout(doFetch, 300);
+    });
+  }
+
+  // Intercept normal form submit (Enter key in search) to use partial fetch.
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    clearTimeout(timer);
+    doFetch();
+  });
+
+  // Reset link: intercept for partial fetch.
+  var resetLink = document.getElementById('reset-filters');
+  if (resetLink) {
+    resetLink.addEventListener('click', function(e) {
+      e.preventDefault();
+      form.reset();
+      doFetch();
+    });
+  }
+
+  // Bind pagination links on initial load.
+  bindPaginationLinks();
+})();
+</script>
 
 {% endblock %}

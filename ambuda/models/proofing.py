@@ -166,6 +166,8 @@ class Project(Base):
     publisher: Mapped[str] = string()
     #: The document's publication year.
     publication_year: Mapped[str] = string()
+    #: The location where the document was published.
+    publication_location: Mapped[str] = string()
     #: A link to the book's WorldCat entry, if available.
     worldcat_link: Mapped[str] = string()
     #: The URL from which the source PDF was fetched, if any.

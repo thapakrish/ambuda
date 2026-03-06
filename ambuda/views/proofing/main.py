@@ -24,7 +24,7 @@ from flask import (
 from flask_login import current_user
 from flask_wtf import FlaskForm
 from slugify import slugify
-from sqlalchemy import func, orm, select
+from sqlalchemy import asc, desc, func, orm, select
 from wtforms import FileField, RadioField, StringField
 from wtforms.validators import DataRequired, ValidationError
 from wtforms.widgets import TextArea
@@ -674,6 +674,17 @@ def texts():
 
     session = q.get_session()
 
+    page = max(1, request.args.get("page", 1, type=int))
+    per_page = 100
+    search = request.args.get("q", "", type=str).strip()
+    sort_field = request.args.get("sort", "title", type=str)
+    sort_dir = request.args.get("sort_dir", "asc", type=str)
+
+    if sort_field not in ("title", "project", "created"):
+        sort_field = "title"
+    if sort_dir not in ("asc", "desc"):
+        sort_dir = "asc"
+
     # Fetch texts with their latest validation report in a single query.
     latest_report = (
         select(db.TextReport.id)
@@ -692,8 +703,29 @@ def texts():
             ),
             orm.selectinload(db.Text.author).load_only(db.Author.name),
         )
-        .order_by(db.Text.created_at.desc())
     )
+
+    if search:
+        stmt = stmt.where(db.Text.title.ilike(f"%{search}%"))
+
+    sort_column = {
+        "title": db.Text.title,
+        "project": db.Project.display_title,
+        "created": db.Text.created_at,
+    }[sort_field]
+    if sort_field == "project":
+        stmt = stmt.outerjoin(db.Project, db.Text.project_id == db.Project.id)
+    direction = asc if sort_dir == "asc" else desc
+    stmt = stmt.order_by(direction(sort_column))
+
+    # Count total before pagination.
+    count_stmt = select(func.count()).select_from(db.Text)
+    if search:
+        count_stmt = count_stmt.where(db.Text.title.ilike(f"%{search}%"))
+    total = session.execute(count_stmt).scalar()
+    total_pages = ceil(total / per_page) if total > 0 else 1
+
+    stmt = stmt.offset((page - 1) * per_page).limit(per_page)
     rows = session.execute(stmt).all()
 
     # Build a flat list of (text, parsed_report) pairs.
@@ -704,11 +736,22 @@ def texts():
         if tr:
             report_map[t.id] = try_parse_text_report(tr.payload)
 
-    return render_template(
-        "proofing/texts.html",
+    template_vars = dict(
         all_texts=all_texts,
         report_map=report_map,
+        page=page,
+        total=total,
+        total_pages=total_pages,
+        search=search,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
     )
+
+    if request.args.get("partial"):
+        html = render_template("proofing/texts_table.html", **template_vars)
+        return jsonify(html=html, total=total)
+
+    return render_template("proofing/texts.html", **template_vars)
 
 
 @bp.route("/texts/<slug>/report")

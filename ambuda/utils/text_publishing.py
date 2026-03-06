@@ -1004,6 +1004,9 @@ def _write_tei_header(xf, project: db.Project, config: db.PublishConfig):
                     if project.publisher:
                         with xf.element("publisher"):
                             xf.write(project.publisher)
+                    if project.publication_location:
+                        with xf.element("pubPlace"):
+                            xf.write(project.publication_location)
                     if project.publication_year:
                         with xf.element("date"):
                             xf.write(project.publication_year)
