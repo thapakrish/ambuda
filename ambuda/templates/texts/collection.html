@@ -1,0 +1,66 @@
+{% extends 'base-text.html' %}
+{% import "macros/components.html" as m %}
+{% import "macros/icons.html" as i %}
+
+
+{% block title %}{{ m.title(collection.title) }}{% endblock %}
+
+
+{% block header %}
+{{ m.basic_header(collection.title, current_user) }}
+{% endblock %}
+
+
+{% block main %}
+<article class="p-4 md:p-0 max-w-3xl mx-auto md:my-24 md:mb-36">
+  {{ i.i_exclamation_circle() }}
+
+  <h1 class="text-3xl font-bold mb-4">{{ collection.title }}</h1>
+
+  {% if collection.description %}
+  <div class="prose mb-8 text-slate-600">
+    {{ collection.description }}
+  </div>
+  {% endif %}
+
+  {% if collection.parent %}
+  <p class="mb-4 text-sm text-slate-500">
+    &larr; <a href="{{ url_for('collections.collection', slug=collection.parent.slug) }}" class="hover:underline">{{ collection.parent.title }}</a>
+  </p>
+  {% endif %}
+
+  {% if child_collections %}
+  <section class="mb-8">
+    <h2 class="text-lg font-semibold mb-3 text-slate-700">{{ _('Subcollections') }}</h2>
+    <ul class="grid grid-cols-2 md:grid-cols-3 gap-3">
+      {% for child in child_collections %}
+      <li>
+        <a href="{{ url_for('collections.collection', slug=child.slug) }}"
+           class="block p-3 rounded border hover:bg-slate-50 hover:border-sky-300">
+          <span class="font-medium text-sky-900">{{ child.title }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if texts %}
+  <section>
+    <h2 class="text-lg font-semibold mb-3 text-slate-700">{{ _('Texts') }}</h2>
+    <ul class="divide-y divide-slate-100">
+      {% for text in texts %}
+      <li class="py-3 px-2 hover:bg-slate-50 rounded">
+        <a href="{{ url_for('texts.text', slug=text.slug) }}" class="hover:underline text-xl">
+          {{ text.title | hk_to_user_script | devanagari_to_user_script }}
+        </a>
+        {% if text.is_p0 %}{{ i.unproofed_text_icon() }}{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% elif not child_collections %}
+  <p class="text-slate-500">{{ _('No texts in this collection yet.') }}</p>
+  {% endif %}
+</article>
+{% endblock %}

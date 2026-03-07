@@ -93,6 +93,24 @@ _LANGUAGE_LABELS: dict[str, str] = {
 }
 
 
+publish_config_collection_association = Table(
+    "publish_config_collection_association",
+    Base.metadata,
+    Column(
+        "publish_config_id",
+        Integer,
+        ForeignKey("publish_configs.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "collection_id",
+        Integer,
+        ForeignKey("text_collections.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+
 class PublishConfig(Base):
     """A publish configuration for a proofing project.
 
@@ -110,12 +128,15 @@ class PublishConfig(Base):
     title: Mapped[str] = mapped_column(String, nullable=False)
     target: Mapped[str | None] = mapped_column(String, nullable=True)
     author: Mapped[str | None] = mapped_column(String, nullable=True)
-    genre: Mapped[str | None] = mapped_column(String, nullable=True)
     language: Mapped[str] = mapped_column(String, nullable=False, default="sa")
     parent_slug: Mapped[str | None] = mapped_column(String, nullable=True)
 
     project = relationship("Project", backref="publish_configs")
     text = relationship("Text")
+    collections = relationship(
+        "TextCollection",
+        secondary=publish_config_collection_association,
+    )
 
 
 class ProjectStatus(StrEnum):

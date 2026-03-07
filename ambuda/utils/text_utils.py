@@ -1,4 +1,5 @@
 import dataclasses as dc
+from collections import OrderedDict
 from datetime import datetime, timedelta
 
 from vidyut.lipi import transliterate, Scheme
@@ -12,7 +13,6 @@ class TextEntry:
     text: db.Text
     children: list["TextEntry"]
 
-    genre: db.Genre | None
     author: db.Author | None
 
 
@@ -32,7 +32,6 @@ def create_text_entries() -> list[TextEntry]:
         child_texts,
         key=lambda x: transliterate(x.title, Scheme.HarvardKyoto, Scheme.Devanagari),
     )
-    genre_map = {x.id: x for x in q.genres()}
     author_map = {x.id: x for x in q.authors()}
 
     text_entries = []
@@ -40,12 +39,10 @@ def create_text_entries() -> list[TextEntry]:
     for text in sorted_mula_texts:
         assert text.parent_id is None
 
-        genre = genre_map.get(text.genre_id)
         author = author_map.get(text.author_id)
         entry = TextEntry(
             text=text,
             children=[],
-            genre=genre,
             author=author,
         )
         text_entries.append(entry)
@@ -54,7 +51,7 @@ def create_text_entries() -> list[TextEntry]:
     for text in sorted_child_texts:
         assert text.parent_id is not None
 
-        entry = TextEntry(text=text, children=[], genre=None, author=None)
+        entry = TextEntry(text=text, children=[], author=None)
         try:
             parent = text_entry_map[text.parent_id]
             parent.children.append(entry)
@@ -76,29 +73,36 @@ def create_recent_text_entries() -> list[TextEntry]:
     return recent[:10]
 
 
-def create_grouped_text_entries() -> dict[str, list[TextEntry]]:
-    _d = lambda x: transliterate(x, Scheme.HarvardKyoto, Scheme.Devanagari)
+def create_grouped_text_entries() -> OrderedDict[str, list[TextEntry]]:
+    """Group text entries by their collections, ordered by collection order."""
+    all_colls = q.Query(q.get_session()).all_collections()
+    by_parent = q.group_collections_by_parent(all_colls)
+    top_collections = by_parent.get(None, [])
 
-    # Map genre name (Devanagari, as stored in DB) -> heading display value (HK)
-    genre_to_heading = {
-        _d("upaniSat"): "upaniSadaH",
-        _d("itihAsaH"): "itihAsau",
-        _d("kAvyam"): "kAvyAni",
-        _d("stotram"): "stotrANi",
-    }
+    # Map every collection id to its top-level ancestor's title
+    coll_id_to_heading: dict[int, str] = {}
+    heading_order: list[str] = []
+    for coll in top_collections:
+        heading_order.append(coll.title)
+        for cid in q.all_descendant_ids(coll.id, all_colls):
+            coll_id_to_heading[cid] = coll.title
 
-    fallback_heading = "anye granthAH"
+    fallback_heading = "\u0905\u0928\u094d\u092f\u0947 \u0917\u094d\u0930\u0928\u094d\u0925\u093e\u0903"  # अन्ये ग्रन्थाः
 
-    grouped_entries = {}
-    for heading in genre_to_heading.values():
-        grouped_entries[heading] = []
-    grouped_entries[fallback_heading] = []
+    grouped: OrderedDict[str, list[TextEntry]] = OrderedDict()
+    for heading in heading_order:
+        grouped[heading] = []
+    grouped[fallback_heading] = []
 
     for entry in create_text_entries():
         heading = None
-        if entry.genre:
-            heading = genre_to_heading.get(entry.genre.name)
+        for coll in entry.text.collections:
+            h = coll_id_to_heading.get(coll.id)
+            if h:
+                heading = h
+                break
         if heading is None:
             heading = fallback_heading
-        grouped_entries[heading].append(entry)
-    return grouped_entries
+        grouped[heading].append(entry)
+
+    return grouped

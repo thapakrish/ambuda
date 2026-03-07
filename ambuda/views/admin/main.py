@@ -16,7 +16,7 @@ from flask import (
 )
 from flask_login import current_user
 from flask_wtf import FlaskForm
-from sqlalchemy import inspect, Text, JSON
+from sqlalchemy import func, inspect, Text, JSON
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms import (
     Form,
@@ -251,11 +251,6 @@ MODEL_CONFIG = [
                 handler=tasks.add_genre_to_texts,
             ),
             Task(
-                name="Edit tags",
-                slug="edit-tags",
-                handler=tasks.edit_tags,
-            ),
-            Task(
                 name="Create exports",
                 slug="create-exports",
                 handler=tasks.create_exports,
@@ -306,9 +301,17 @@ MODEL_CONFIG = [
         search_key="slug",
     ),
     ModelConfig(
-        model=db.TextTag,
-        list_columns=["id", "name"],
+        model=db.TextCollection,
+        list_columns=["id", "slug", "title", "parent_id", "order"],
         category=Category.TEXTS,
+        display_field="title",
+        tasks=[
+            Task(
+                name="Manage tree",
+                slug="manage-tree",
+                handler=lambda **kwargs: redirect(url_for("admin.manage_collections")),
+            ),
+        ],
     ),
     ModelConfig(
         model=db.Thread,
@@ -591,6 +594,11 @@ def check_access():
         "admin.celery_tasks",
         "admin.celery_task_detail",
         "admin.debug_memory",
+        "admin.manage_collections",
+        "admin.collections_save_tree",
+        "admin.collections_create",
+        "admin.collections_edit",
+        "admin.collections_delete",
     ):
         if not current_user.is_admin:
             abort(404)
@@ -976,3 +984,153 @@ def debug_memory():
         growth=growth,
         sqlalchemy_instances=sa_counts,
     )
+
+
+# --- Collection management ---
+
+
+def _collection_tree():
+    """Build the full collection tree for the admin UI."""
+    all_colls = q.Query(q.get_session()).all_collections()
+    by_parent = q.group_collections_by_parent(all_colls)
+
+    def build(parent_id):
+        children = by_parent.get(parent_id, [])
+        return [
+            {
+                "id": c.id,
+                "slug": c.slug,
+                "title": c.title,
+                "order": c.order,
+                "description": c.description or "",
+                "children": build(c.id),
+            }
+            for c in children
+        ]
+
+    return build(None)
+
+
+@bp.route("/collections")
+def manage_collections():
+    """Admin page for managing text collections with drag-and-drop."""
+    tree = _collection_tree()
+    return render_template(
+        "admin/collections.html",
+        tree=tree,
+        models_by_category=get_models_by_category(),
+        model_configs={c.model.__name__: c for c in MODEL_CONFIG},
+        current_model="TextCollection",
+    )
+
+
+@bp.route("/collections/save-tree", methods=["POST"])
+def collections_save_tree():
+    """Save the full tree structure. Expects JSON: [{id, parent_id, order}, ...]."""
+    data = request.get_json()
+    items = data.get("items", [])
+    if not items:
+        return jsonify(ok=False, error="No items"), 400
+
+    session = q.get_session()
+    for item in items:
+        coll = session.get(db.TextCollection, item["id"])
+        if not coll:
+            continue
+        coll.parent_id = item.get("parent_id") or None
+        coll.order = item.get("order", 0)
+    session.commit()
+    return jsonify(ok=True)
+
+
+@bp.route("/collections/create", methods=["POST"])
+def collections_create():
+    """Create a new collection. Expects JSON: {slug, title, description, parent_id}."""
+    data = request.get_json()
+    slug = data.get("slug", "").strip()
+    title = data.get("title", "").strip()
+    if not slug or not title:
+        return jsonify(ok=False, error="slug and title required"), 400
+
+    session = q.get_session()
+
+    existing = session.query(db.TextCollection).filter_by(slug=slug).first()
+    if existing:
+        return jsonify(ok=False, error="slug already exists"), 400
+
+    parent_id = data.get("parent_id") or None
+    max_order = (
+        session.query(func.max(db.TextCollection.order))
+        .filter(db.TextCollection.parent_id == parent_id)
+        .scalar()
+    ) or 0
+
+    coll = db.TextCollection(
+        slug=slug,
+        title=title,
+        description=data.get("description", "").strip() or None,
+        parent_id=parent_id,
+        order=max_order + 1,
+    )
+    session.add(coll)
+    session.commit()
+    return jsonify(ok=True, id=coll.id)
+
+
+@bp.route("/collections/<int:collection_id>", methods=["PATCH"])
+def collections_edit(collection_id):
+    """Edit a collection's title, slug, or description. Expects JSON."""
+    data = request.get_json()
+    session = q.get_session()
+    coll = session.get(db.TextCollection, collection_id)
+    if not coll:
+        return jsonify(ok=False, error="Not found"), 404
+
+    if "title" in data:
+        coll.title = data["title"].strip()
+    if "slug" in data:
+        new_slug = data["slug"].strip()
+        existing = (
+            session.query(db.TextCollection)
+            .filter(
+                db.TextCollection.slug == new_slug,
+                db.TextCollection.id != collection_id,
+            )
+            .first()
+        )
+        if existing:
+            return jsonify(ok=False, error="slug already exists"), 400
+        coll.slug = new_slug
+    if "description" in data:
+        coll.description = data["description"].strip() or None
+
+    session.commit()
+    return jsonify(ok=True)
+
+
+@bp.route("/collections/<int:collection_id>", methods=["DELETE"])
+def collections_delete(collection_id):
+    """Delete a collection. Its children are reparented to its parent."""
+    session = q.get_session()
+    coll = session.get(db.TextCollection, collection_id)
+    if not coll:
+        return jsonify(ok=False, error="Not found"), 404
+
+    # Save target parent before deletion nullifies it via ORM cascade.
+    new_parent_id = coll.parent_id
+
+    # Reparent children to this collection's parent.
+    # We must delete first because session.delete() triggers SQLAlchemy's
+    # relationship cascade which sets child.parent_id = None.
+    children = (
+        session.query(db.TextCollection)
+        .filter(db.TextCollection.parent_id == collection_id)
+        .all()
+    )
+    session.delete(coll)
+    session.flush()
+
+    for child in children:
+        child.parent_id = new_parent_id
+    session.commit()
+    return jsonify(ok=True)

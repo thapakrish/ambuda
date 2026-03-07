@@ -20,8 +20,12 @@
   window.PUBLISH_CONFIG_SCHEMA = {{ publish_config_schema|tojson|safe }};
   window.PROJECT_SLUG = {{ project.slug|tojson|safe }};
   window.LANGUAGE_LABELS = {{ language_labels|tojson|safe }};
-  window.GENRE_NAMES = {{ genres|map(attribute='name')|list|tojson|safe }};
   window.AUTHOR_NAMES = {{ authors|map(attribute='name')|list|tojson|safe }};
+  window.ALL_COLLECTIONS = [
+    {% for coll in all_collections %}
+    { "id": {{ coll.id }}, "title": {{ coll.title|tojson }}, "parent": {{ coll.parent.title|tojson if coll.parent else 'null' }} },
+    {% endfor %}
+  ];
 </script>
 
 <div class="prose max-w-none">
@@ -97,13 +101,6 @@
                                 title="{{ _('Add new author') }}">+</button>
                       </template>
 
-                      <template x-if="field.name === 'genre'">
-                        <button type="button"
-                                @click.stop="newGenreOpen = !newGenreOpen; newGenreName = ''"
-                                class="ml-1 inline-flex items-center justify-center w-4 h-4 text-xs font-bold rounded text-green-600 hover:bg-green-100"
-                                title="{{ _('Add new genre') }}">+</button>
-                      </template>
-
                       <template x-if="field.name === 'target'">
                         <span class="relative inline-block ml-1" @click.stop>
                           <button type="button" @click="filterHelpOpen = !filterHelpOpen"
@@ -165,36 +162,6 @@
                       </div>
                     </template>
 
-                    <template x-if="field.name === 'genre'">
-                      <div>
-                        <div class="relative" @click.away="pickers.genre.close(entry)">
-                          <input type="text"
-                                 :value="pickers.genre.displayValue(entry)"
-                                 @focus="pickers.genre.open(entry)"
-                                 @input="pickers.genre.search(entry, $event.target.value)"
-                                 @keydown="pickers.genre.keydown(entry, $event)"
-                                 :placeholder="field.placeholder"
-                                 class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
-                          <div x-show="entry._genre_open" class="absolute z-20 mt-1 w-full bg-white border border-slate-300 rounded shadow-lg max-h-48 overflow-y-auto">
-                            <template x-for="(name, i) in pickers.genre.filtered(entry)" :key="name">
-                              <button type="button" @click="pickers.genre.select(entry, name)"
-                                      :class="i === (entry._genre_sel || 0) ? 'bg-blue-100' : 'hover:bg-slate-50'"
-                                      class="block w-full text-left px-3 py-1.5 text-sm" x-text="name"></button>
-                            </template>
-                            <div x-show="pickers.genre.filtered(entry).length === 0" class="px-3 py-2 text-sm text-slate-400">No matches</div>
-                          </div>
-                        </div>
-                        <div x-show="newGenreOpen" class="mt-2 flex items-center gap-2">
-                          <input type="text" x-model="newGenreName"
-                                 @keydown.enter.prevent="addGenre()" @keydown.escape.prevent="newGenreOpen = false"
-                                 placeholder="New genre name (Devanagari)"
-                                 class="flex-1 border border-slate-300 rounded px-3 py-1.5 text-sm">
-                          <button type="button" @click="addGenre()" class="btn btn-basic text-xs">Add</button>
-                          <button type="button" @click="newGenreOpen = false" class="text-slate-400 hover:text-slate-600 text-xs">Cancel</button>
-                        </div>
-                      </div>
-                    </template>
-
                     <template x-if="field.name === 'language'">
                       <div class="relative" @click.away="pickers.lang.close(entry)">
                         <input type="text"
@@ -218,7 +185,7 @@
                       </div>
                     </template>
 
-                    <template x-if="field.type === 'string' && !field.enum && !['author', 'genre'].includes(field.name) && field.name !== 'language'">
+                    <template x-if="field.type === 'string' && !field.enum && field.name !== 'author' && field.name !== 'language'">
                       <div>
                         <input type="text" x-model="entry[field.name]"
                                :required="field.required" :placeholder="field.placeholder"
@@ -254,6 +221,37 @@
                     <p x-show="field.description" x-text="field.description" class="text-xs text-slate-500 mt-1"></p>
                   </div>
                 </template>
+
+                {# Collections multi-select #}
+                <div class="col-span-2">
+                  <label class="text-sm font-medium text-slate-700 mb-1 block">{{ _('Collections') }}</label>
+                  <div class="flex flex-wrap gap-1.5 mb-2">
+                    <template x-for="cid in (entry.collection_ids || [])" :key="cid">
+                      <span class="inline-flex items-center gap-1 bg-sky-100 text-sky-800 text-xs px-2 py-1 rounded">
+                        <span x-text="collectionLabel(cid)"></span>
+                        <button type="button" @click="removeCollection(entry, cid)" class="text-sky-600 hover:text-sky-900">&times;</button>
+                      </span>
+                    </template>
+                  </div>
+                  <div class="relative" @click.away="entry._coll_open = false">
+                    <input type="text"
+                           placeholder="{{ _('Search collections...') }}"
+                           @focus="entry._coll_open = true"
+                           @input="entry._coll_query = $event.target.value"
+                           :value="entry._coll_query || ''"
+                           class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+                    <div x-show="entry._coll_open" class="absolute z-20 mt-1 w-full bg-white border border-slate-300 rounded shadow-lg max-h-48 overflow-y-auto">
+                      <template x-for="coll in filteredCollections(entry)" :key="coll.id">
+                        <button type="button" @click="addCollection(entry, coll.id); entry._coll_query = ''"
+                                class="block w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50">
+                          <span x-text="coll.parent ? coll.parent + ' → ' + coll.title : coll.title"></span>
+                        </button>
+                      </template>
+                      <div x-show="filteredCollections(entry).length === 0" class="px-3 py-2 text-sm text-slate-400">{{ _('No matches') }}</div>
+                    </div>
+                  </div>
+                  <p class="text-xs text-slate-500 mt-1">{{ _('Collections this text belongs to') }}</p>
+                </div>
               </div>
             </div>
           </div>

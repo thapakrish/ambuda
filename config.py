@@ -197,8 +197,9 @@ class UnitTestConfig:
     #: doesn't have good support for it.
     WTF_CSRF_ENABLED = False
 
-    #: Disable rate limiting in tests so existing tests pass unchanged.
-    RATELIMIT_ENABLED = False
+    #: Enable rate limiting at init so hooks are registered, but disable it
+    #: immediately after in conftest so tests aren't affected.
+    RATELIMIT_ENABLED = True
     RATELIMIT_STORAGE_URI = "memory://"
 
     RECAPTCHA_PUBLIC_KEY = "re-public"

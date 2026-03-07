@@ -120,9 +120,7 @@ export default () => ({
   authors: window.AUTHOR_NAMES || [],
   newAuthorOpen: false,
   newAuthorName: '',
-  genres: window.GENRE_NAMES || [],
-  newGenreOpen: false,
-  newGenreName: '',
+  allCollections: window.ALL_COLLECTIONS || [],
   allLanguages: null,
   pickers: {},
   dragIndex: null,
@@ -149,15 +147,6 @@ export default () => ({
         },
         onSelect: (entry, name) => { entry.author = name; },
       }),
-      genre: createPicker('genre', this, {
-        getItems: (c) => c.genres,
-        displayValue: (c, entry) => entry.genre || '',
-        match: (name, query) => {
-          const lower = name.toLowerCase();
-          return lower.includes(query) || toHK(name).toLowerCase().startsWith(query);
-        },
-        onSelect: (entry, name) => { entry.genre = name; },
-      }),
     };
     this.generateFieldsFromSchema();
     this.config = { publish: window.PUBLISH_CONFIG };
@@ -180,12 +169,11 @@ export default () => ({
       slug: { placeholder: 'e.g., ramayana', description: 'Unique identifier for the text' },
       target: { placeholder: 'e.g., (page 1 10)', description: 'S-expression filter for block selection' },
       author: { placeholder: 'e.g., Vālmīki', description: 'Author of the work' },
-      genre: { placeholder: 'Search genres...', description: 'The category this text best belongs to' },
       language: { placeholder: 'Search languages...', description: 'Primary language of the text' },
       parent_slug: { placeholder: 'e.g., ramayana', description: 'Slug of the parent text (for translations/commentaries)' },
     };
 
-    const fieldOrder = ['title', 'slug', 'target', 'author', 'genre', 'language', 'parent_slug'];
+    const fieldOrder = ['title', 'slug', 'target', 'author', 'language', 'parent_slug'];
     const labels = { target: 'Filter' };
 
     this.fields = fieldOrder
@@ -229,15 +217,35 @@ export default () => ({
     this.newAuthorOpen = false;
   },
 
-  addGenre() {
-    const name = (this.newGenreName || '').trim();
-    if (!name) return;
-    if (!this.genres.includes(name)) {
-      this.genres.push(name);
-      this.genres.sort();
+  // -- Collections --
+
+  collectionLabel(id) {
+    const coll = this.allCollections.find((c) => c.id === id);
+    if (!coll) return `#${id}`;
+    return coll.parent ? `${coll.parent} → ${coll.title}` : coll.title;
+  },
+
+  filteredCollections(entry) {
+    const query = (entry._coll_query || '').toLowerCase();
+    const selected = entry.collection_ids || [];
+    return this.allCollections.filter((c) => {
+      if (selected.includes(c.id)) return false;
+      if (!query) return true;
+      return c.title.toLowerCase().includes(query)
+        || (c.parent && c.parent.toLowerCase().includes(query));
+    });
+  },
+
+  addCollection(entry, id) {
+    if (!entry.collection_ids) entry.collection_ids = [];
+    if (!entry.collection_ids.includes(id)) {
+      entry.collection_ids.push(id);
     }
-    this.newGenreName = '';
-    this.newGenreOpen = false;
+  },
+
+  removeCollection(entry, id) {
+    if (!entry.collection_ids) return;
+    entry.collection_ids = entry.collection_ids.filter((cid) => cid !== id);
   },
 
   // -- Drag-and-drop reordering --
@@ -362,6 +370,9 @@ export default () => ({
         const v = entry[f.name];
         if (f.required || (v !== '' && v !== null && v !== undefined)) clean[f.name] = v;
       });
+      if (entry.collection_ids && entry.collection_ids.length > 0) {
+        clean.collection_ids = entry.collection_ids;
+      }
       return clean;
     });
     return JSON.stringify(cleaned, null, 2);

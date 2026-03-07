@@ -1,0 +1,448 @@
+{% extends "admin/base.html" %}
+{% from "admin/macros.html" import flash_messages %}
+
+{% block title %}Manage Collections{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800">Collections</h1>
+      <p class="text-slate-600 mt-1">Drag to reorder or reparent.</p>
+    </div>
+    <button onclick="showCreateModal(null)" class="px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700">
+      + New Collection
+    </button>
+  </div>
+
+  {{ flash_messages() }}
+
+  <div id="tree-status" class="hidden mb-4 text-sm px-3 py-2 rounded"></div>
+
+  <div id="collection-tree" class="space-y-1"></div>
+</div>
+
+{# Save / Discard bar #}
+<div id="save-bar" class="hidden fixed bottom-0 left-64 right-0 bg-white border-t shadow-lg px-8 py-4 flex items-center justify-between z-40">
+  <span class="text-sm text-slate-600">You have unsaved changes to the tree layout.</span>
+  <div class="flex gap-3">
+    <button onclick="discardChanges()" class="px-4 py-2 border rounded hover:bg-slate-50">Discard</button>
+    <button onclick="saveChanges()" class="px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700">Save changes</button>
+  </div>
+</div>
+
+{# Create / Edit modal #}
+<div id="modal-overlay" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+  <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6" onclick="event.stopPropagation()">
+    <h2 id="modal-title" class="text-xl font-bold mb-4">New Collection</h2>
+    <form id="modal-form" onsubmit="return handleModalSubmit(event)">
+      <input type="hidden" id="modal-id" value="">
+      <input type="hidden" id="modal-parent-id" value="">
+
+      <div class="mb-3">
+        <label class="block text-sm font-medium text-slate-700 mb-1">Title</label>
+        <input type="text" id="modal-title-input" required
+               class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-sky-500">
+      </div>
+      <div class="mb-3">
+        <label class="block text-sm font-medium text-slate-700 mb-1">Slug</label>
+        <input type="text" id="modal-slug" required pattern="[a-z0-9\-]+"
+               class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-sky-500 font-mono text-sm">
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-slate-700 mb-1">Description</label>
+        <textarea id="modal-description" rows="3"
+                  class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-sky-500 text-sm"></textarea>
+      </div>
+
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="hideModal()" class="px-4 py-2 border rounded hover:bg-slate-50">Cancel</button>
+        <button type="submit" class="px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  .tree-node { user-select: none; }
+  .tree-item {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 0.75rem; border-radius: 0.375rem;
+    border: 2px solid transparent; cursor: grab;
+    transition: background 0.1s;
+  }
+  .tree-item:hover { background: #f1f5f9; }
+  .tree-item.drag-over-above { border-top-color: #0284c7; }
+  .tree-item.drag-over-below { border-bottom-color: #0284c7; }
+  .tree-item.drag-over-inside { background: #e0f2fe; border-color: #0284c7; }
+  .tree-item.dragging { opacity: 0.4; }
+  .tree-children { margin-left: 1.5rem; }
+  .tree-toggle { width: 1.25rem; text-align: center; cursor: pointer; color: #94a3b8; font-size: 0.75rem; }
+  .tree-toggle:hover { color: #475569; }
+</style>
+
+<script>
+var TREE = {{ tree | tojson }};
+var SAVED_TREE = JSON.parse(JSON.stringify(TREE));
+var draggedId = null;
+var dirty = false;
+
+function markDirty() {
+  dirty = true;
+  document.getElementById('save-bar').classList.remove('hidden');
+}
+
+function markClean() {
+  dirty = false;
+  document.getElementById('save-bar').classList.add('hidden');
+}
+
+function showStatus(msg, ok) {
+  var el = document.getElementById('tree-status');
+  el.textContent = msg;
+  el.className = 'mb-4 text-sm px-3 py-2 rounded ' + (ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800');
+  setTimeout(function() { el.className = 'hidden mb-4 text-sm px-3 py-2 rounded'; }, 2000);
+}
+
+function findNode(tree, id) {
+  for (var i = 0; i < tree.length; i++) {
+    if (tree[i].id === id) return tree[i];
+    var found = findNode(tree[i].children, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findParentList(tree, id, parent) {
+  for (var i = 0; i < tree.length; i++) {
+    if (tree[i].id === id) return { list: tree, index: i, parentId: parent };
+    var found = findParentList(tree[i].children, id, tree[i].id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function removeNode(tree, id) {
+  for (var i = 0; i < tree.length; i++) {
+    if (tree[i].id === id) { return tree.splice(i, 1)[0]; }
+    var found = removeNode(tree[i].children, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function getAllDescendantIds(node) {
+  var ids = [node.id];
+  if (node.children) {
+    for (var i = 0; i < node.children.length; i++) {
+      ids = ids.concat(getAllDescendantIds(node.children[i]));
+    }
+  }
+  return ids;
+}
+
+// --- Rendering ---
+
+function renderTree() {
+  document.getElementById('collection-tree').innerHTML = renderNodes(TREE, null);
+}
+
+function renderNodes(nodes, parentId) {
+  if (!nodes.length) return '';
+  var html = '<div class="tree-children space-y-0.5">';
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    var hasChildren = n.children && n.children.length > 0;
+    html += '<div class="tree-node" data-id="' + n.id + '">';
+    html += '<div class="tree-item" draggable="true"'
+         +  ' ondragstart="onDragStart(event,' + n.id + ')"'
+         +  ' ondragend="onDragEnd(event)"'
+         +  ' ondragover="onDragOver(event,' + n.id + ')"'
+         +  ' ondragleave="onDragLeave(event)"'
+         +  ' ondrop="onDrop(event,' + n.id + ')">';
+    html += '<span class="tree-toggle" onclick="toggleChildren(this)">'
+         +  (hasChildren ? '&#9660;' : '&nbsp;&middot;') + '</span>';
+    html += '<span class="font-medium text-slate-800">' + escHtml(n.title) + '</span>';
+    html += '<span class="text-xs text-slate-400 font-mono">' + escHtml(n.slug) + '</span>';
+    html += '<span class="ml-auto flex gap-1">';
+    html += '<button onclick="showEditModal(' + n.id + ')" class="text-xs text-sky-600 hover:underline px-1">edit</button>';
+    html += '<button onclick="showCreateModal(' + n.id + ')" class="text-xs text-sky-600 hover:underline px-1">+ child</button>';
+    html += '<button onclick="deleteCollection(' + n.id + ')" class="text-xs text-red-500 hover:underline px-1">delete</button>';
+    html += '</span>';
+    html += '</div>';
+    if (hasChildren) {
+      html += renderNodes(n.children, n.id);
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function escHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function toggleChildren(el) {
+  var node = el.closest('.tree-node');
+  var childDiv = node.querySelector(':scope > .tree-children');
+  if (childDiv) {
+    childDiv.classList.toggle('hidden');
+    el.innerHTML = childDiv.classList.contains('hidden') ? '&#9654;' : '&#9660;';
+  }
+}
+
+// --- Drag and drop ---
+
+function onDragStart(e, id) {
+  draggedId = id;
+  e.target.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', id);
+}
+
+function onDragEnd(e) {
+  draggedId = null;
+  e.target.classList.remove('dragging');
+  document.querySelectorAll('.drag-over-above,.drag-over-below,.drag-over-inside').forEach(function(el) {
+    el.classList.remove('drag-over-above', 'drag-over-below', 'drag-over-inside');
+  });
+}
+
+function getDropZone(e, el) {
+  var rect = el.getBoundingClientRect();
+  var y = e.clientY - rect.top;
+  var h = rect.height;
+  if (y < h * 0.25) return 'above';
+  if (y > h * 0.75) return 'below';
+  return 'inside';
+}
+
+function onDragOver(e, targetId) {
+  if (draggedId === targetId) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  var item = e.currentTarget;
+  item.classList.remove('drag-over-above', 'drag-over-below', 'drag-over-inside');
+  item.classList.add('drag-over-' + getDropZone(e, item));
+}
+
+function onDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over-above', 'drag-over-below', 'drag-over-inside');
+}
+
+function onDrop(e, targetId) {
+  e.preventDefault();
+  if (draggedId === targetId) return;
+
+  var item = e.currentTarget;
+  var zone = getDropZone(e, item);
+  item.classList.remove('drag-over-above', 'drag-over-below', 'drag-over-inside');
+
+  var draggedNode = findNode(TREE, draggedId);
+  if (!draggedNode) return;
+
+  // Cannot drop onto own descendant
+  var descIds = getAllDescendantIds(draggedNode);
+  if (descIds.indexOf(targetId) !== -1) {
+    showStatus('Cannot move a collection under its own descendant.', false);
+    return;
+  }
+
+  var node = removeNode(TREE, draggedId);
+  if (!node) return;
+
+  if (zone === 'inside') {
+    var target = findNode(TREE, targetId);
+    if (!target.children) target.children = [];
+    target.children.push(node);
+  } else {
+    var info = findParentList(TREE, targetId, null);
+    var insertAt = info.index + (zone === 'below' ? 1 : 0);
+    info.list.splice(insertAt, 0, node);
+  }
+
+  markDirty();
+  renderTree();
+}
+
+// --- Save / Discard ---
+
+function flattenTree(nodes, parentId) {
+  var items = [];
+  for (var i = 0; i < nodes.length; i++) {
+    items.push({ id: nodes[i].id, parent_id: parentId, order: i });
+    if (nodes[i].children && nodes[i].children.length) {
+      items = items.concat(flattenTree(nodes[i].children, nodes[i].id));
+    }
+  }
+  return items;
+}
+
+function saveChanges() {
+  var items = flattenTree(TREE, null);
+  fetch("{{ url_for('admin.collections_save_tree') }}", {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ items: items })
+  }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) {
+        SAVED_TREE = JSON.parse(JSON.stringify(TREE));
+        markClean();
+        showStatus('Saved.', true);
+      } else {
+        showStatus(d.error || 'Save failed.', false);
+      }
+    });
+}
+
+function discardChanges() {
+  TREE = JSON.parse(JSON.stringify(SAVED_TREE));
+  markClean();
+  renderTree();
+}
+
+// --- Modal (create/edit save immediately) ---
+
+function showCreateModal(parentId) {
+  document.getElementById('modal-title').textContent = parentId ? 'New Sub-collection' : 'New Collection';
+  document.getElementById('modal-id').value = '';
+  document.getElementById('modal-parent-id').value = parentId || '';
+  document.getElementById('modal-title-input').value = '';
+  document.getElementById('modal-slug').value = '';
+  document.getElementById('modal-description').value = '';
+  document.getElementById('modal-overlay').classList.remove('hidden');
+}
+
+function showEditModal(id) {
+  var node = findNode(TREE, id);
+  if (!node) return;
+  document.getElementById('modal-title').textContent = 'Edit Collection';
+  document.getElementById('modal-id').value = id;
+  document.getElementById('modal-parent-id').value = '';
+  document.getElementById('modal-title-input').value = node.title;
+  document.getElementById('modal-slug').value = node.slug;
+  document.getElementById('modal-description').value = node.description || '';
+  document.getElementById('modal-overlay').classList.remove('hidden');
+}
+
+function hideModal() {
+  document.getElementById('modal-overlay').classList.add('hidden');
+}
+
+document.getElementById('modal-overlay').addEventListener('click', hideModal);
+
+document.getElementById('modal-title-input').addEventListener('input', function() {
+  if (!document.getElementById('modal-id').value) {
+    document.getElementById('modal-slug').value = this.value
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  }
+});
+
+function handleModalSubmit(e) {
+  e.preventDefault();
+  var id = document.getElementById('modal-id').value;
+  var title = document.getElementById('modal-title-input').value.trim();
+  var slug = document.getElementById('modal-slug').value.trim();
+  var description = document.getElementById('modal-description').value.trim();
+
+  if (id) {
+    fetch("{{ url_for('admin.collections_edit', collection_id=0) }}".replace('/0', '/' + id), {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({title: title, slug: slug, description: description})
+    }).then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.ok) {
+          // Update both working tree and saved tree
+          var node = findNode(TREE, parseInt(id));
+          node.title = title; node.slug = slug; node.description = description;
+          var saved = findNode(SAVED_TREE, parseInt(id));
+          if (saved) { saved.title = title; saved.slug = slug; saved.description = description; }
+          renderTree();
+          hideModal();
+          showStatus('Updated.', true);
+        } else {
+          showStatus(d.error, false);
+        }
+      });
+  } else {
+    var parentId = document.getElementById('modal-parent-id').value;
+    fetch("{{ url_for('admin.collections_create') }}", {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        title: title, slug: slug, description: description,
+        parent_id: parentId ? parseInt(parentId) : null
+      })
+    }).then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.ok) {
+          var newNode = {id: d.id, slug: slug, title: title, description: description, children: []};
+          // Add to both trees so the new node isn't "dirty"
+          function addTo(tree) {
+            if (parentId) {
+              var parent = findNode(tree, parseInt(parentId));
+              if (parent) {
+                if (!parent.children) parent.children = [];
+                parent.children.push(JSON.parse(JSON.stringify(newNode)));
+              }
+            } else {
+              tree.push(JSON.parse(JSON.stringify(newNode)));
+            }
+          }
+          addTo(TREE);
+          addTo(SAVED_TREE);
+          renderTree();
+          hideModal();
+          showStatus('Created.', true);
+        } else {
+          showStatus(d.error, false);
+        }
+      });
+  }
+  return false;
+}
+
+function deleteCollection(id) {
+  var node = findNode(TREE, id);
+  if (!node) return;
+  var msg = 'Delete "' + node.title + '"?';
+  if (node.children && node.children.length) {
+    msg += ' Its ' + node.children.length + ' child collection(s) will be moved up.';
+  }
+  if (!confirm(msg)) return;
+
+  fetch("{{ url_for('admin.collections_delete', collection_id=0) }}".replace('/0', '/' + id), {
+    method: 'DELETE',
+    headers: {'Content-Type': 'application/json'}
+  }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) {
+        // Reparent children in both trees
+        function reparentAndRemove(tree) {
+          var info = findParentList(tree, id, null);
+          if (!info) return;
+          var removed = info.list.splice(info.index, 1)[0];
+          if (removed.children && removed.children.length) {
+            for (var i = removed.children.length - 1; i >= 0; i--) {
+              info.list.splice(info.index, 0, removed.children[i]);
+            }
+          }
+        }
+        reparentAndRemove(TREE);
+        reparentAndRemove(SAVED_TREE);
+        renderTree();
+        showStatus('Deleted.', true);
+      } else {
+        showStatus(d.error || 'Delete failed.', false);
+      }
+    });
+}
+
+renderTree();
+</script>
+{% endblock %}

@@ -67,7 +67,8 @@ class Query:
         self.session = session or get_session()
 
     def texts(self) -> list[db.Text]:
-        return list(self.session.scalars(select(db.Text)).all())
+        stmt = select(db.Text).options(selectinload(db.Text.collections))
+        return list(self.session.scalars(stmt).all())
 
     def page_statuses(self) -> list[db.PageStatus]:
         return list(self.session.scalars(select(db.PageStatus)).all())
@@ -374,6 +375,61 @@ class Query:
     def authors(self) -> list[db.Author]:
         return list(self.session.scalars(select(db.Author)).all())
 
+    def all_collections(self) -> list[db.TextCollection]:
+        """Fetch all collections in one query, ordered by order."""
+        stmt = select(db.TextCollection).order_by(db.TextCollection.order)
+        return list(self.session.scalars(stmt).all())
+
+    def collections(self) -> list[db.TextCollection]:
+        """Return top-level collections with children assembled in Python."""
+        all_colls = self.all_collections()
+        by_parent = group_collections_by_parent(all_colls)
+        # Wire up children so lazy loads aren't triggered
+        from sqlalchemy.orm.attributes import set_committed_value
+
+        for c in all_colls:
+            set_committed_value(c, "children", by_parent.get(c.id, []))
+        return by_parent.get(None, [])
+
+    def collection(self, slug: str) -> db.TextCollection | None:
+        stmt = select(db.TextCollection).filter_by(slug=slug)
+        return self.session.scalars(stmt).first()
+
+    def collection_texts(self, collection: db.TextCollection) -> list[db.Text]:
+        descendant_ids = all_descendant_ids(collection.id, self.all_collections())
+        stmt = (
+            select(db.Text)
+            .join(db.text_collection_association)
+            .filter(db.text_collection_association.c.collection_id.in_(descendant_ids))
+            .order_by(db.Text.title)
+        )
+        return list(self.session.scalars(stmt).all())
+
+
+def group_collections_by_parent(
+    all_collections: list[db.TextCollection],
+) -> dict[int | None, list[db.TextCollection]]:
+    """Group a flat list of collections by parent_id."""
+    by_parent: dict[int | None, list[db.TextCollection]] = {}
+    for c in all_collections:
+        by_parent.setdefault(c.parent_id, []).append(c)
+    return by_parent
+
+
+def all_descendant_ids(
+    collection_id: int, all_collections: list[db.TextCollection]
+) -> list[int]:
+    """Return IDs of a collection and all its descendants, using a flat list."""
+    by_parent = group_collections_by_parent(all_collections)
+    ids = []
+    stack = [collection_id]
+    while stack:
+        cid = stack.pop()
+        ids.append(cid)
+        for child in by_parent.get(cid, []):
+            stack.append(child.id)
+    return ids
+
 
 def texts() -> list[db.Text]:
     """Return a list of all texts in no particular older."""
@@ -566,3 +622,18 @@ def author(slug: str) -> db.Author | None:
 def authors() -> list[db.Author]:
     query = Query(get_session())
     return query.authors()
+
+
+def collections() -> list[db.TextCollection]:
+    query = Query(get_session())
+    return query.collections()
+
+
+def collection(slug: str) -> db.TextCollection | None:
+    query = Query(get_session())
+    return query.collection(slug)
+
+
+def collection_texts(collection_: db.TextCollection) -> list[db.Text]:
+    query = Query(get_session())
+    return query.collection_texts(collection_)

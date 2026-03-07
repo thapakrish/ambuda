@@ -217,6 +217,12 @@ def flask_app():
 
     celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
+    # Disable rate limiting after init so hooks are registered but tests
+    # aren't affected.  Individual test modules can re-enable it.
+    from ambuda.rate_limit import limiter
+
+    limiter.enabled = False
+
     with app.app_context():
         initialize_test_db()
 

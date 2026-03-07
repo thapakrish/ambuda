@@ -38,6 +38,12 @@
         </select>
       </div>
 
+      <label class="flex items-center gap-2 text-sm cursor-pointer">
+        <input type="checkbox" name="unproofed" value="1"
+               {% if unproofed_only %}checked{% endif %}>
+        {{ _('Unproofed only') }}
+      </label>
+
       <noscript>
         <button type="submit"
             class="w-full bg-sky-900 text-white px-3 py-1.5 rounded hover:bg-sky-800">
@@ -45,7 +51,7 @@
         </button>
       </noscript>
 
-      {% if search or sort_field != 'title' or sort_dir != 'asc' %}
+      {% if search or sort_field != 'title' or sort_dir != 'asc' or unproofed_only %}
       <a href="{{ url_for('proofing.texts') }}" id="reset-filters"
          class="block text-center text-sm text-slate-500 hover:text-slate-700">
         {{ _('Reset filters') }}
@@ -106,8 +112,8 @@
     });
   }
 
-  // Select/dropdown changes: immediate fetch.
-  form.querySelectorAll('select').forEach(function(el) {
+  // Select/dropdown and checkbox changes: immediate fetch.
+  form.querySelectorAll('select, input[type="checkbox"]').forEach(function(el) {
     el.addEventListener('change', function() { clearTimeout(timer); doFetch(); });
   });
 
@@ -139,6 +145,20 @@
 
   // Bind pagination links on initial load.
   bindPaginationLinks();
+
+  // Checkbox handling for batch collection editing (uses event delegation).
+  container.addEventListener('change', function(e) {
+    if (e.target.id === 'select-all-texts') {
+      container.querySelectorAll('.text-checkbox').forEach(function(cb) {
+        cb.checked = e.target.checked;
+      });
+    }
+    var btn = document.getElementById('batch-collections-btn');
+    if (btn) {
+      var checked = container.querySelectorAll('.text-checkbox:checked');
+      btn.classList.toggle('hidden', checked.length === 0);
+    }
+  });
 })();
 </script>
 

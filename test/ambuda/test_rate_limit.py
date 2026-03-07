@@ -8,12 +8,10 @@ from ambuda.rate_limit import limiter
 @pytest.fixture(autouse=True)
 def _enable_rate_limiting(flask_app):
     """Temporarily enable rate limiting for tests in this module."""
-    flask_app.config["RATELIMIT_ENABLED"] = True
     limiter.enabled = True
-    limiter.init_app(flask_app)
+    limiter._storage.reset()
     yield
     limiter.enabled = False
-    flask_app.config["RATELIMIT_ENABLED"] = False
 
 
 def test_sign_in_rate_limit(client):

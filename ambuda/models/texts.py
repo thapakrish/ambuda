@@ -13,7 +13,6 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 from sqlalchemy import (
-    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -45,36 +44,50 @@ class TextStatus(StrEnum):
     P2 = "p2"
 
 
-text_tag_association = Table(
-    "text_tag_association",
+text_collection_association = Table(
+    "text_collection_association",
     Base.metadata,
-    Column("text_id", Integer, ForeignKey("texts.id"), primary_key=True),
-    Column("tag_id", Integer, ForeignKey("text_tags.id"), primary_key=True),
-    Column("is_featured", Boolean, default=False, nullable=False),
+    Column(
+        "text_id", Integer, ForeignKey("texts.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column(
+        "collection_id",
+        Integer,
+        ForeignKey("text_collections.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
 )
 
 
-class TextTag(Base):
-    """A tag for categorizing texts."""
+class TextCollection(Base):
+    """A collection for organizing texts hierarchically."""
 
-    __tablename__ = "text_tags"
+    __tablename__ = "text_collections"
 
     #: Primary key.
     id = pk()
-    #: The tag name.
-    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    #: Optional description.
+    #: The parent collection (nullable for top-level collections).
+    parent_id = foreign_key("text_collections.id", nullable=True)
+    #: URL-friendly name.
+    slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    #: Ordering within the parent collection.
+    order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: Human-readable title.
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    #: Optional description (Markdown).
     description: Mapped[str | None] = mapped_column(_Text, nullable=True)
+    #: When this collection was created.
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
-    #: Texts associated with this tag.
+    parent = relationship("TextCollection", remote_side=[id], backref="children")
     texts = relationship(
         "Text",
-        secondary=text_tag_association,
-        back_populates="tags",
+        secondary=text_collection_association,
+        back_populates="collections",
     )
 
     def __str__(self):
-        return self.name
+        return self.title
 
 
 class Text(Base):
@@ -134,9 +147,9 @@ class Text(Base):
     parent = relationship("Text", remote_side=[id], backref="children")
     # The exports associated with this text.
     exports = relationship("TextExport", backref="text", cascade="delete")
-    tags = relationship(
-        "TextTag",
-        secondary=text_tag_association,
+    collections = relationship(
+        "TextCollection",
+        secondary=text_collection_association,
         back_populates="texts",
     )
 

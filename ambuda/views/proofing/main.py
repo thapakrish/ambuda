@@ -679,6 +679,7 @@ def texts():
     search = request.args.get("q", "", type=str).strip()
     sort_field = request.args.get("sort", "title", type=str)
     sort_dir = request.args.get("sort_dir", "asc", type=str)
+    unproofed_only = request.args.get("unproofed", "", type=str) == "1"
 
     if sort_field not in ("title", "project", "created"):
         sort_field = "title"
@@ -707,6 +708,8 @@ def texts():
 
     if search:
         stmt = stmt.where(db.Text.title.ilike(f"%{search}%"))
+    if unproofed_only:
+        stmt = stmt.where(db.Text.status == db.TextStatus.P0)
 
     sort_column = {
         "title": db.Text.title,
@@ -722,6 +725,8 @@ def texts():
     count_stmt = select(func.count()).select_from(db.Text)
     if search:
         count_stmt = count_stmt.where(db.Text.title.ilike(f"%{search}%"))
+    if unproofed_only:
+        count_stmt = count_stmt.where(db.Text.status == db.TextStatus.P0)
     total = session.execute(count_stmt).scalar()
     total_pages = ceil(total / per_page) if total > 0 else 1
 
@@ -736,15 +741,33 @@ def texts():
         if tr:
             report_map[t.id] = try_parse_text_report(tr.payload)
 
+    # Map text_id → (project_slug) for texts that have a publish config.
+    text_ids = [t.id for t in all_texts]
+    config_map = {}
+    if text_ids:
+        config_rows = (
+            session.query(
+                db.PublishConfig.text_id,
+                db.Project.slug,
+            )
+            .join(db.Project, db.PublishConfig.project_id == db.Project.id)
+            .filter(db.PublishConfig.text_id.in_(text_ids))
+            .all()
+        )
+        for text_id, project_slug in config_rows:
+            config_map[text_id] = project_slug
+
     template_vars = dict(
         all_texts=all_texts,
         report_map=report_map,
+        config_map=config_map,
         page=page,
         total=total,
         total_pages=total_pages,
         search=search,
         sort_field=sort_field,
         sort_dir=sort_dir,
+        unproofed_only=unproofed_only,
     )
 
     if request.args.get("partial"):
@@ -835,4 +858,72 @@ def admin_dashboard():
         num_contributors_30d=num_contributors_30d,
         num_contributors_7d=num_contributors_7d,
         num_contributors_1d=num_contributors_1d,
+    )
+
+
+@bp.route("/texts/batch-collections", methods=["GET", "POST"])
+@p2_required
+def batch_edit_collections():
+    """Add or remove collections for selected texts."""
+    session = q.get_session()
+    text_ids = request.args.getlist("text_id", type=int) or request.form.getlist(
+        "text_id", type=int
+    )
+    if not text_ids:
+        flash("No texts selected.", "error")
+        return redirect(url_for("proofing.texts"))
+
+    selected_texts = session.query(db.Text).filter(db.Text.id.in_(text_ids)).all()
+    all_collections = (
+        session.query(db.TextCollection).order_by(db.TextCollection.order).all()
+    )
+
+    form = FlaskForm()
+    if form.validate_on_submit():
+        add_ids = request.form.getlist("add_collection", type=int)
+        remove_ids = request.form.getlist("remove_collection", type=int)
+
+        add_collections = (
+            session.query(db.TextCollection)
+            .filter(db.TextCollection.id.in_(add_ids))
+            .all()
+            if add_ids
+            else []
+        )
+        remove_collections = (
+            session.query(db.TextCollection)
+            .filter(db.TextCollection.id.in_(remove_ids))
+            .all()
+            if remove_ids
+            else []
+        )
+
+        for text in selected_texts:
+            for coll in add_collections:
+                if coll not in text.collections:
+                    text.collections.append(coll)
+            for coll in remove_collections:
+                if coll in text.collections:
+                    text.collections.remove(coll)
+
+        # Sync text.collections → publish config.collections
+        for text in selected_texts:
+            configs = (
+                session.query(db.PublishConfig)
+                .filter(db.PublishConfig.text_id == text.id)
+                .all()
+            )
+            for pc in configs:
+                pc.collections = list(text.collections)
+
+        session.commit()
+        flash(f"Updated collections for {len(selected_texts)} text(s).", "success")
+        return redirect(url_for("proofing.texts"))
+
+    return render_template(
+        "proofing/batch_collections.html",
+        form=form,
+        selected_texts=selected_texts,
+        all_collections=all_collections,
+        text_ids=text_ids,
     )

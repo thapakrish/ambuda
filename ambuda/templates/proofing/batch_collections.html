@@ -1,0 +1,70 @@
+{% extends 'proofing/base.html' %}
+{% import "macros/components.html" as mc %}
+{% import "macros/proofing.html" as m %}
+
+
+{% block title %}{{ mc.title(_('Edit Collections')) }}{% endblock %}
+
+{% block content %}
+{{ m.header(_('Edit Collections')) }}
+
+<div class="max-w-3xl mx-auto">
+  <p class="mb-4 text-sm text-slate-600">
+    {{ _('Editing collections for %(count)d text(s):', count=selected_texts|length) }}
+  </p>
+
+  <ul class="mb-6 text-sm bg-slate-50 rounded p-3 max-h-48 overflow-y-auto">
+    {% for text in selected_texts %}
+    <li>{{ text.title }}</li>
+    {% endfor %}
+  </ul>
+
+  <form method="post" action="{{ url_for('proofing.batch_edit_collections') }}">
+    {{ form.csrf_token }}
+    {% for tid in text_ids %}
+    <input type="hidden" name="text_id" value="{{ tid }}">
+    {% endfor %}
+
+    <div class="grid md:grid-cols-2 gap-6 mb-6">
+      <fieldset>
+        <legend class="font-semibold mb-2 text-slate-700">{{ _('Add to collections') }}</legend>
+        <div class="space-y-1 max-h-64 overflow-y-auto border rounded p-3">
+          {% for coll in all_collections %}
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="add_collection" value="{{ coll.id }}">
+            <span>
+              {% if coll.parent %}{{ coll.parent.title }} &rarr; {% endif %}{{ coll.title }}
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend class="font-semibold mb-2 text-slate-700">{{ _('Remove from collections') }}</legend>
+        <div class="space-y-1 max-h-64 overflow-y-auto border rounded p-3">
+          {% for coll in all_collections %}
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="remove_collection" value="{{ coll.id }}">
+            <span>
+              {% if coll.parent %}{{ coll.parent.title }} &rarr; {% endif %}{{ coll.title }}
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="flex gap-3">
+      <button type="submit"
+          class="bg-sky-900 text-white px-4 py-2 rounded hover:bg-sky-800">
+        {{ _('Update Collections') }}
+      </button>
+      <a href="{{ url_for('proofing.texts') }}"
+         class="px-4 py-2 rounded border hover:bg-slate-50">
+        {{ _('Cancel') }}
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

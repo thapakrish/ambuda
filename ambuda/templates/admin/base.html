@@ -21,7 +21,11 @@
 
         <nav class="flex-1 overflow-y-auto p-4">
           {% block sidebar %}
-          <div class="mb-4 pb-4 border-b border-slate-700">
+          <div class="mb-4 pb-4 border-b border-slate-700 space-y-1">
+            <a href="{{ url_for('admin.manage_collections') }}"
+               class="block px-3 py-2 rounded hover:bg-slate-700 transition {% if request.endpoint == 'admin.manage_collections' %}bg-slate-700{% endif %}">
+              Collections
+            </a>
             <a href="{{ url_for('admin.celery_tasks') }}"
                class="block px-3 py-2 rounded hover:bg-slate-700 transition {% if request.endpoint in ('admin.celery_tasks', 'admin.celery_task_detail') %}bg-slate-700{% endif %}">
               Celery Tasks

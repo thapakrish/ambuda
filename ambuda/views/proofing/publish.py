@@ -21,6 +21,7 @@ from flask import (
 )
 from flask_babel import lazy_gettext as _l
 import sqlalchemy as sqla
+from sqlalchemy.orm import selectinload
 from werkzeug.exceptions import abort
 from werkzeug.utils import redirect
 
@@ -293,29 +294,26 @@ def _build_diff_lines(old_xml: str, new_xml: str) -> list[dict]:
 bp = Blueprint("publish", __name__)
 
 
-def _publish_config_fields():
-    """Return the field schema used by the JS component."""
-    return {
-        "properties": {
-            "title": {"type": "string"},
-            "slug": {"type": "string"},
-            "target": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "author": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "genre": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "language": {
-                "$ref": "#/$defs/LanguageCode",
-                "default": "sa",
-            },
-            "parent_slug": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+PUBLISH_CONFIG_SCHEMA = {
+    "properties": {
+        "title": {"type": "string"},
+        "slug": {"type": "string"},
+        "target": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "author": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "language": {
+            "$ref": "#/$defs/LanguageCode",
+            "default": "sa",
         },
-        "$defs": {
-            "LanguageCode": {
-                "type": "string",
-                "enum": [c.value for c in LanguageCode],
-            },
+        "parent_slug": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    },
+    "$defs": {
+        "LanguageCode": {
+            "type": "string",
+            "enum": [c.value for c in LanguageCode],
         },
-        "required": ["slug", "title"],
-    }
+    },
+    "required": ["slug", "title"],
+}
 
 
 @bp.route("/<slug>/publish", methods=["GET", "POST"])
@@ -411,11 +409,25 @@ def config(slug):
                 title=pc.get("title", ""),
                 target=pc.get("target") or None,
                 author=pc.get("author") or None,
-                genre=pc.get("genre") or None,
                 language=pc.get("language", "sa") or "sa",
                 parent_slug=pc.get("parent_slug") or None,
             )
             session.add(new_pc)
+            session.flush()
+
+            # Set collections on the new config
+            collection_ids = pc.get("collection_ids") or []
+            if collection_ids:
+                colls = (
+                    session.execute(
+                        sqla.select(db.TextCollection).where(
+                            db.TextCollection.id.in_(collection_ids)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                new_pc.collections = list(colls)
 
         session.commit()
         flash("Configuration saved successfully.", "success")
@@ -427,6 +439,7 @@ def config(slug):
             sqla.select(PublishConfig)
             .where(PublishConfig.project_id == project_.id)
             .order_by(PublishConfig.order)
+            .options(selectinload(PublishConfig.collections))
         )
         .scalars()
         .all()
@@ -438,25 +451,30 @@ def config(slug):
             "title": c.title,
             "target": c.target or "",
             "author": c.author or "",
-            "genre": c.genre or "",
             "language": c.language or "sa",
             "parent_slug": c.parent_slug or "",
+            "collection_ids": [coll.id for coll in c.collections],
             "_published": c.text_id is not None,
         }
         for c in configs
     ]
 
-    config_schema = _publish_config_fields()
+    config_schema = PUBLISH_CONFIG_SCHEMA
 
-    # Get all genres and authors for datalist
-    genres = (
-        session.execute(sqla.select(db.Genre).order_by(db.Genre.name)).scalars().all()
-    )
+    # Get all authors for datalist
     authors = (
         session.execute(sqla.select(db.Author).order_by(db.Author.name)).scalars().all()
     )
 
     language_labels = {code.value: code.label for code in LanguageCode}
+
+    all_collections = (
+        session.execute(
+            sqla.select(db.TextCollection).order_by(db.TextCollection.order)
+        )
+        .scalars()
+        .all()
+    )
 
     return render_template(
         "proofing/projects/publish.html",
@@ -464,8 +482,8 @@ def config(slug):
         publish_config=publish_config,
         publish_config_schema=config_schema,
         language_labels=language_labels,
-        genres=genres,
         authors=authors,
+        all_collections=all_collections,
     )
 
 
@@ -614,19 +632,6 @@ def create(project_slug, text_slug):
             text.author_id = author.id
         else:
             text.author_id = None
-
-        # Set genre, and create it as needed.
-        if config.genre:
-            genre = session.execute(
-                sqla.select(db.Genre).where(db.Genre.name == config.genre)
-            ).scalar_one_or_none()
-            if not genre:
-                genre = db.Genre(name=config.genre)
-                session.add(genre)
-                session.flush()
-            text.genre_id = genre.id
-        else:
-            text.genre_id = None
 
         # Set an overall quality score for the text based on the quality of its source pages.
         #
@@ -794,6 +799,9 @@ def create(project_slug, text_slug):
                                 child_id=child_block.id,
                             )
                         )
+
+        # Sync collections from publish config to text
+        text.collections = list(config.collections)
 
         session.commit()
 

@@ -28,6 +28,7 @@ from ambuda.views.dictionaries import bp as dictionaries
 from ambuda.views.proofing import bp as proofing
 from ambuda.views.proofing import user_bp as users
 from ambuda.views.reader.authors import bp as authors
+from ambuda.views.reader.collections import bp as collections
 from ambuda.views.reader.parses import bp as parses
 from ambuda.views.reader.texts import bp as texts
 from ambuda.views.site import bp as site
@@ -131,6 +132,7 @@ def create_app(config_env: str):
 
     # Blueprints
     app.register_blueprint(authors, url_prefix="/authors")
+    app.register_blueprint(collections, url_prefix="/collections")
     app.register_blueprint(about, url_prefix="/about")
     app.register_blueprint(admin, url_prefix="/admin")
     app.register_blueprint(api, url_prefix="/api")

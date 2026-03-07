@@ -1,0 +1,36 @@
+{% extends 'base-text.html' %}
+{% import "macros/components.html" as m %}
+
+
+{% block title %}{{ m.title(_('Collections')) }}{% endblock %}
+
+
+{% block header %}
+{{ m.basic_header(_('Collections'), current_user) }}
+{% endblock %}
+
+
+{% block main %}
+<article class="p-4 md:p-0 max-w-3xl mx-auto md:my-24 md:mb-36">
+  <h1 class="text-3xl font-bold mb-8">{{ _('Collections') }}</h1>
+
+  <ul class="space-y-4">
+    {% for coll in collections %}
+    <li>
+      <a href="{{ url_for('collections.collection', slug=coll.slug) }}"
+         class="block p-4 rounded border hover:bg-slate-50 hover:border-sky-300">
+        <span class="font-medium text-xl text-sky-900">{{ coll.title }}</span>
+        {% if coll.description %}
+        <p class="text-sm text-slate-500 mt-1">{{ coll.description }}</p>
+        {% endif %}
+        {% if coll.children %}
+        <p class="text-xs text-slate-400 mt-2">
+          {{ coll.children | length }} {{ _('subcollections') }}
+        </p>
+        {% endif %}
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</article>
+{% endblock %}

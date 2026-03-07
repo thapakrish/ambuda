@@ -148,8 +148,15 @@ def run_ocr():
            (filename, google_text, sarvam_text, google_error, sarvam_error,
             google_time_ms, sarvam_time_ms)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (filename, google_text, sarvam_text, google_error, sarvam_error,
-         google_ms, sarvam_ms),
+        (
+            filename,
+            google_text,
+            sarvam_text,
+            google_error,
+            sarvam_error,
+            google_ms,
+            sarvam_ms,
+        ),
     )
     run_id = cursor.lastrowid
     db.commit()
@@ -175,11 +182,15 @@ def _render_run_detail(run_id: int):
     # Generate unified diff
     google_lines = (run["google_text"] or "").splitlines(keepends=True)
     sarvam_lines = (run["sarvam_text"] or "").splitlines(keepends=True)
-    diff = list(difflib.unified_diff(
-        google_lines, sarvam_lines,
-        fromfile="Google Vision", tofile="Sarvam.ai",
-        lineterm=""
-    ))
+    diff = list(
+        difflib.unified_diff(
+            google_lines,
+            sarvam_lines,
+            fromfile="Google Vision",
+            tofile="Sarvam.ai",
+            lineterm="",
+        )
+    )
 
     return render_template("debug/ocr_eval_detail.html", run=run, diff=diff)
 

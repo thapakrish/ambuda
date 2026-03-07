@@ -323,7 +323,6 @@ def test_import_projects_and_export_projects(admin_client):
         slug="test-roundtrip-project",
         title="Test Roundtrip Title",
         author="Test PC Author",
-        genre="kavya",
         language="sa",
     )
     session.add(publish_config)
@@ -430,7 +429,6 @@ def test_import_projects_and_export_projects(admin_client):
             "title": "Test Roundtrip Title",
             "target": None,
             "author": "Test PC Author",
-            "genre": "kavya",
             "language": "sa",
             "parent_slug": None,
         },
