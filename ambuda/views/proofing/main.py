@@ -682,6 +682,7 @@ def texts():
     sort_dir = request.args.get("sort_dir", "asc", type=str)
     unproofed_only = request.args.get("unproofed", "", type=str) == "1"
     project_id = request.args.get("project_id", 0, type=int)
+    collection_id = request.args.get("collection_id", 0, type=int)
 
     if sort_field not in ("title", "project", "created"):
         sort_field = "title"
@@ -726,6 +727,10 @@ def texts():
         stmt = stmt.where(db.Text.status == db.TextStatus.P0)
     if project_id:
         stmt = stmt.where(db.Text.project_id == project_id)
+    if collection_id:
+        stmt = stmt.where(
+            db.Text.collections.any(db.TextCollection.id == collection_id)
+        )
 
     sort_column = {
         "title": db.Text.title,
@@ -745,6 +750,10 @@ def texts():
         count_stmt = count_stmt.where(db.Text.status == db.TextStatus.P0)
     if project_id:
         count_stmt = count_stmt.where(db.Text.project_id == project_id)
+    if collection_id:
+        count_stmt = count_stmt.where(
+            db.Text.collections.any(db.TextCollection.id == collection_id)
+        )
     total = session.execute(count_stmt).scalar()
     total_pages = ceil(total / per_page) if total > 0 else 1
 
@@ -787,6 +796,7 @@ def texts():
         sort_dir=sort_dir,
         unproofed_only=unproofed_only,
         project_id=project_id,
+        collection_id=collection_id,
     )
 
     if request.args.get("partial"):
@@ -801,6 +811,14 @@ def texts():
         .all()
     )
     template_vars["filter_projects"] = filter_projects
+
+    filter_collections = (
+        session.query(db.TextCollection)
+        .filter(db.TextCollection.texts.any())
+        .order_by(db.TextCollection.title)
+        .all()
+    )
+    template_vars["filter_collections"] = filter_collections
 
     return render_template("proofing/texts.html", **template_vars)
 
@@ -902,14 +920,54 @@ def batch_edit_collections():
         return redirect(url_for("proofing.texts"))
 
     selected_texts = session.query(db.Text).filter(db.Text.id.in_(text_ids)).all()
-    all_collections = (
-        session.query(db.TextCollection).order_by(db.TextCollection.order).all()
+    all_collections_flat = (
+        session.query(db.TextCollection)
+        .options(orm.selectinload(db.TextCollection.parent))
+        .all()
     )
+    # Build a nested tree sorted alphabetically at each level.
+    by_parent: dict[int | None, list] = {}
+    for c in all_collections_flat:
+        by_parent.setdefault(c.parent_id, []).append(c)
+    for children in by_parent.values():
+        children.sort(key=lambda c: c.title)
+
+    all_collections = []
+
+    def _walk(parent_id, depth):
+        for c in by_parent.get(parent_id, []):
+            all_collections.append((c, depth))
+            _walk(c.id, depth + 1)
+
+    _walk(None, 0)
+
+    # Map child_id → parent_id for the JS auto-select behaviour.
+    parent_map = {c.id: c.parent_id for c in all_collections_flat if c.parent_id}
+
+    # Map id → set of all descendant ids, for de-duping on save.
+    def _descendants(pid):
+        result = set()
+        for c in by_parent.get(pid, []):
+            result.add(c.id)
+            result |= _descendants(c.id)
+        return result
+
+    descendant_map = {c.id: _descendants(c.id) for c in all_collections_flat}
 
     form = FlaskForm()
     if form.validate_on_submit():
-        add_ids = request.form.getlist("add_collection", type=int)
-        remove_ids = request.form.getlist("remove_collection", type=int)
+        add_ids = set(request.form.getlist("add_collection", type=int))
+        remove_ids = set(request.form.getlist("remove_collection", type=int))
+
+        # De-dupe: if a descendant is selected, drop its ancestors.
+        add_ids = {
+            cid for cid in add_ids if not (descendant_map.get(cid, set()) & add_ids)
+        }
+        remove_ids = {
+            cid
+            for cid in remove_ids
+            if not (descendant_map.get(cid, set()) & remove_ids)
+        }
 
         add_collections = (
             session.query(db.TextCollection)
@@ -953,5 +1011,6 @@ def batch_edit_collections():
         form=form,
         selected_texts=selected_texts,
         all_collections=all_collections,
+        parent_map=parent_map,
         text_ids=text_ids,
     )

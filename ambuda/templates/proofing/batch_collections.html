@@ -29,12 +29,10 @@
       <fieldset>
         <legend class="font-semibold mb-2 text-slate-700">{{ _('Add to collections') }}</legend>
         <div class="space-y-1 max-h-64 overflow-y-auto border rounded p-3">
-          {% for coll in all_collections %}
-          <label class="flex items-center gap-2 text-sm">
+          {% for coll, depth in all_collections %}
+          <label class="flex items-center gap-2 text-sm" style="padding-left: {{ depth * 1.25 }}rem">
             <input type="checkbox" name="add_collection" value="{{ coll.id }}">
-            <span>
-              {% if coll.parent %}{{ coll.parent.title }} &rarr; {% endif %}{{ coll.title }}
-            </span>
+            <span>{{ coll.title }}</span>
           </label>
           {% endfor %}
         </div>
@@ -43,12 +41,10 @@
       <fieldset>
         <legend class="font-semibold mb-2 text-slate-700">{{ _('Remove from collections') }}</legend>
         <div class="space-y-1 max-h-64 overflow-y-auto border rounded p-3">
-          {% for coll in all_collections %}
-          <label class="flex items-center gap-2 text-sm">
+          {% for coll, depth in all_collections %}
+          <label class="flex items-center gap-2 text-sm" style="padding-left: {{ depth * 1.25 }}rem">
             <input type="checkbox" name="remove_collection" value="{{ coll.id }}">
-            <span>
-              {% if coll.parent %}{{ coll.parent.title }} &rarr; {% endif %}{{ coll.title }}
-            </span>
+            <span>{{ coll.title }}</span>
           </label>
           {% endfor %}
         </div>
@@ -67,4 +63,55 @@
     </div>
   </form>
 </div>
+
+<script>
+(function() {
+  var PARENT_MAP = {{ parent_map|tojson }};
+
+  // Build reverse map: parent → [children]
+  var CHILDREN_MAP = {};
+  Object.keys(PARENT_MAP).forEach(function(cid) {
+    var pid = PARENT_MAP[cid];
+    if (!CHILDREN_MAP[pid]) CHILDREN_MAP[pid] = [];
+    CHILDREN_MAP[pid].push(parseInt(cid));
+  });
+
+  function getAncestors(id) {
+    var ancestors = [];
+    var pid = PARENT_MAP[id];
+    while (pid) {
+      ancestors.push(pid);
+      pid = PARENT_MAP[pid];
+    }
+    return ancestors;
+  }
+
+  function getDescendants(id) {
+    var result = [];
+    (CHILDREN_MAP[id] || []).forEach(function(cid) {
+      result.push(cid);
+      result = result.concat(getDescendants(cid));
+    });
+    return result;
+  }
+
+  document.querySelectorAll('fieldset').forEach(function(fieldset) {
+    fieldset.addEventListener('change', function(e) {
+      if (e.target.type !== 'checkbox') return;
+      var id = parseInt(e.target.value);
+      if (e.target.checked) {
+        getAncestors(id).forEach(function(aid) {
+          var cb = fieldset.querySelector('input[value="' + aid + '"]');
+          if (cb && !cb.checked) cb.checked = true;
+        });
+      } else {
+        getDescendants(id).forEach(function(did) {
+          var cb = fieldset.querySelector('input[value="' + did + '"]');
+          if (cb && cb.checked) cb.checked = false;
+        });
+      }
+    });
+  });
+})();
+</script>
 {% endblock %}

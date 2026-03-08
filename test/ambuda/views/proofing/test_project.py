@@ -297,6 +297,35 @@ def test_reorder_pages__invalid_image_uuids(rama_client):
     assert "Invalid image UUIDs" in resp.json["error"]
 
 
+def test_batch_status__unauth(client):
+    resp = client.get("/proofing/test-project/tools/batch-status")
+    assert resp.status_code == 302
+
+
+def test_batch_status__no_p2(no_p1_client):
+    resp = no_p1_client.get("/proofing/test-project/tools/batch-status")
+    assert resp.status_code == 302
+
+
+def test_batch_status__p2_get(rama_client):
+    resp = rama_client.get("/proofing/test-project/tools/batch-status")
+    assert resp.status_code == 200
+    assert "Set Status for Image Range" in resp.text
+
+
+def test_batch_status__p2_preview(rama_client):
+    resp = rama_client.get(
+        "/proofing/test-project/tools/batch-status?start=1&end=1&status_id=1"
+    )
+    assert resp.status_code == 200
+    assert "Preview" in resp.text
+
+
+def test_batch_status__bad_project(rama_client):
+    resp = rama_client.get("/proofing/unknown/tools/batch-status")
+    assert resp.status_code == 404
+
+
 def test_replace_pdf__unauth(client):
     resp = client.get("/proofing/test-project/replace-pdf")
     assert resp.status_code == 302

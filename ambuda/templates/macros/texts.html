@@ -48,31 +48,30 @@
 
 {# List of all texts #}
 {% macro all_texts(text_entries) %}
-<ul class="divide-y divide-slate-100">
+<ul>
 {% for entry in text_entries %}
-<li class="py-3 px-2 hover:bg-slate-50 rounded" data-title="{{ entry.text.title }}">
-  <h2 class="flex justify-between items-baseline">
-    <span>
+<li class="py-1.5 px-2" data-title="{{ entry.text.title }}">
+  <div class="flex justify-between items-start">
+    <div>
       {% set url = url_for('texts.text', slug=entry.text.slug) %}
-      <a href="{{ url }}" class="hover:underline text-xl">
+      <a href="{{ url }}" class="hover:underline text-xl deva-serif">
         {{- entry.text.title | hk_to_user_script | devanagari_to_user_script -}}
       </a>
-      {% if entry.text.is_p0 %}
-      {{ i.unproofed_text_icon() }}
+      {% if entry.author %}
+      <div class="text-sm text-slate-400">
+        <a href="{{ url_for('authors.author', slug=entry.author.slug) }}" class="hover:underline">
+          {{ entry.author.name }}
+        </a>
+      </div>
       {% endif %}
-    </span>
-
-    {% if entry.author %}
-    <span class="text-sm text-slate-400">
-      <a href="{{ url_for('authors.author', slug=entry.author.slug) }}" class="hover:underline">
-        {{ entry.author.name }}
-      </a>
-    </span>
+    </div>
+    {% if entry.text.is_p0 %}
+    <span class="shrink-0 ml-2">{{ i.unproofed_text_icon() }}</span>
     {% endif %}
-  </h2>
+  </div>
 
   {% if entry.children %}
-  <ul class="mt-2 pl-4 space-y-1">
+  <ul class="mt-1 pl-4 space-y-0.5">
     {% for child in entry.children %}
       {% set url = url_for('texts.text', slug=child.text.slug) %}
       <li class="text-sm text-slate-600">
@@ -93,12 +92,41 @@
 
 {% macro grouped_texts(grouped_entries) %}
   {{ i.i_exclamation_circle() }}
-  {% for heading, entries in grouped_entries.items() %}
-    {% if entries %}
-    <section data-section class="mb-16 deva-serif">
-      <h2 class="text-sky-900 font-bold text-4xl text-center mt-16 mb-10">{{ heading | hk_to_user_script }}</h2>
-      {{ all_texts(entries) }}
+  {% for group in grouped_entries %}
+    <section data-section class="mb-8 mt-8 bg-white rounded shadow-sm border border-slate-200 border-t-2 border-t-sky-400 px-6 md:px-8 py-6 md:py-8">
+      {% for sub in group.subgroups %}
+        {% if not loop.first %}
+        <div class="border-t border-slate-100 my-6"></div>
+        {% endif %}
+        <div class="flex flex-col md:flex-row md:gap-10">
+          <div class="md:w-1/4 shrink-0 mb-3 md:mb-0">
+            {% if loop.first %}
+            <h2 class="text-slate-900 font-bold text-2xl deva-serif">{{ group.title | hk_to_user_script }}</h2>
+            {% if group.description %}
+            <p class="text-sm text-slate-700 mt-2">{{ group.description }}</p>
+            {% endif %}
+            <div class="text-xs text-slate-400 mt-3 space-y-0.5">
+              <p>{{ group.text_count }} {{ _('text') if group.text_count == 1 else _('texts') }}</p>
+              {% if group.most_recent and group.most_recent.text.published_at %}
+              <p>{{ _('Latest text:') }} <a href="{{ url_for('texts.text', slug=group.most_recent.text.slug) }}" class="hover:underline">{{ group.most_recent.text.title | hk_to_user_script | devanagari_to_user_script }}</a></p>
+              {% endif %}
+            </div>
+            {% endif %}
+            {% if sub.title %}
+            <h3 class="text-slate-600 font-semibold text-lg deva-serif {% if loop.first %}mt-4{% endif %}">{{ sub.title | hk_to_user_script }}</h3>
+            <div class="text-xs text-slate-400 mt-1 space-y-0.5">
+              <p>{{ sub.text_count }} {{ _('text') if sub.text_count == 1 else _('texts') }}</p>
+              {% if sub.most_recent and sub.most_recent.text.published_at %}
+              <p>{{ _('Latest text:') }} <a href="{{ url_for('texts.text', slug=sub.most_recent.text.slug) }}" class="hover:underline">{{ sub.most_recent.text.title | hk_to_user_script | devanagari_to_user_script }}</a></p>
+              {% endif %}
+            </div>
+            {% endif %}
+          </div>
+          <div class="flex-1 min-w-0">
+            {{ all_texts(sub.entries) }}
+          </div>
+        </div>
+      {% endfor %}
     </section>
-    {% endif %}
   {% endfor %}
 {% endmacro %}

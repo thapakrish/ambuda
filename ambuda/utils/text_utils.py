@@ -62,47 +62,129 @@ def create_text_entries() -> list[TextEntry]:
 
 
 def create_recent_text_entries() -> list[TextEntry]:
-    one_week_ago = datetime.utcnow() - timedelta(weeks=1)
     all_entries = create_text_entries()
-    recent = [
-        e
-        for e in all_entries
-        if e.text.published_at is not None and e.text.published_at >= one_week_ago
-    ]
+    recent = [e for e in all_entries if e.text.published_at is not None]
     recent.sort(key=lambda e: e.text.published_at, reverse=True)
-    return recent[:10]
+    return recent[:5]
 
 
-def create_grouped_text_entries() -> OrderedDict[str, list[TextEntry]]:
-    """Group text entries by their collections, ordered by collection order."""
+@dc.dataclass
+class SubGroup:
+    """A subheading within a top-level collection group."""
+
+    title: str | None
+    entries: list[TextEntry]
+
+    @property
+    def text_count(self) -> int:
+        return len(self.entries)
+
+    @property
+    def most_recent(self) -> "TextEntry | None":
+        latest = None
+        for e in self.entries:
+            pub = e.text.published_at
+            if pub and (latest is None or pub > latest.text.published_at):
+                latest = e
+        return latest
+
+
+@dc.dataclass
+class CollectionGroup:
+    """A top-level collection with its description and subgroups."""
+
+    title: str
+    description: str | None
+    subgroups: list[SubGroup]
+
+    @property
+    def text_count(self) -> int:
+        return sum(len(sg.entries) for sg in self.subgroups)
+
+    @property
+    def most_recent(self) -> TextEntry | None:
+        latest = None
+        for sg in self.subgroups:
+            for e in sg.entries:
+                pub = e.text.published_at
+                if pub and (latest is None or pub > latest.text.published_at):
+                    latest = e
+        return latest
+
+
+def create_grouped_text_entries() -> list[CollectionGroup]:
+    """Group text entries by collections two levels deep.
+
+    Top-level collections become major headings.  Their direct children
+    become subheadings.  Deeper descendants are folded into the nearest
+    depth-2 ancestor.  Texts that don't belong to any collection land in
+    a fallback group.
+    """
     all_colls = q.Query(q.get_session()).all_collections()
     by_parent = q.group_collections_by_parent(all_colls)
     top_collections = by_parent.get(None, [])
 
-    # Map every collection id to its top-level ancestor's title
-    coll_id_to_heading: dict[int, str] = {}
-    heading_order: list[str] = []
-    for coll in top_collections:
-        heading_order.append(coll.title)
-        for cid in q.all_descendant_ids(coll.id, all_colls):
-            coll_id_to_heading[cid] = coll.title
+    # Map every collection id → (top_title, sub_title_or_None).
+    # depth-1 = top-level collection (sub_title=None, texts go under heading directly)
+    # depth-2 = direct child (sub_title=child.title)
+    # depth-3+ = folded into its depth-2 ancestor
+    coll_id_to_key: dict[int, tuple[str, str | None]] = {}
+
+    for top in top_collections:
+        coll_id_to_key[top.id] = (top.title, None)
+        for child in by_parent.get(top.id, []):
+            coll_id_to_key[child.id] = (top.title, child.title)
+            # All deeper descendants map to this child's subheading.
+            for desc_id in q.all_descendant_ids(child.id, all_colls):
+                if desc_id != child.id:
+                    coll_id_to_key[desc_id] = (top.title, child.title)
 
     fallback_heading = "\u0905\u0928\u094d\u092f\u0947 \u0917\u094d\u0930\u0928\u094d\u0925\u093e\u0903"  # अन्ये ग्रन्थाः
 
-    grouped: OrderedDict[str, list[TextEntry]] = OrderedDict()
-    for heading in heading_order:
-        grouped[heading] = []
-    grouped[fallback_heading] = []
+    # Build ordered structure: heading → {sub → entries}
+    # Use (heading, sub) insertion order to preserve collection ordering.
+    # Track top-level info: (title, description, [sub_titles])
+    top_info: list[tuple[str, str | None, list[str | None]]] = []
+    bucket: dict[tuple[str, str | None], list[TextEntry]] = {}
+
+    for top in top_collections:
+        subs: list[str | None] = [None]
+        bucket[(top.title, None)] = []
+        for child in by_parent.get(top.id, []):
+            subs.append(child.title)
+            bucket[(top.title, child.title)] = []
+        top_info.append((top.title, top.description, subs))
+
+    fallback_description = "The texts in this collection do not have a clear category or have not yet been categorized."
+    top_info.append((fallback_heading, fallback_description, [None]))
+    bucket[(fallback_heading, None)] = []
 
     for entry in create_text_entries():
-        heading = None
+        key = None
+        # Pick the most specific (deepest) matching collection.
         for coll in entry.text.collections:
-            h = coll_id_to_heading.get(coll.id)
-            if h:
-                heading = h
-                break
-        if heading is None:
-            heading = fallback_heading
-        grouped[heading].append(entry)
+            k = coll_id_to_key.get(coll.id)
+            if k:
+                if key is None or (k[1] is not None and key[1] is None):
+                    key = k
+        if key is None:
+            key = (fallback_heading, None)
+        bucket[key].append(entry)
 
-    return grouped
+    result: list[CollectionGroup] = []
+    for heading, description, subs in top_info:
+        groups = []
+        for sub in subs:
+            entries = bucket.get((heading, sub), [])
+            if entries:
+                groups.append(SubGroup(title=sub, entries=entries))
+        if groups:
+            result.append(
+                CollectionGroup(
+                    title=heading,
+                    description=description,
+                    subgroups=groups,
+                )
+            )
+
+    return result

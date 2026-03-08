@@ -313,6 +313,121 @@ def tools(slug):
     return render_template("proofing/projects/tools.html", project=project_)
 
 
+@bp.route("/<slug>/tools/batch-status", methods=["GET", "POST"])
+@p2_required
+def batch_status(slug):
+    """Set page status for a range of pages."""
+    project_ = q.project(slug)
+    if project_ is None:
+        abort(404)
+
+    session = q.get_session()
+    statuses = q.page_statuses()
+    pages = project_.pages  # already ordered by Page.order
+
+    form = FlaskForm()
+    if (
+        request.method == "POST"
+        and form.validate_on_submit()
+        and request.form.get("confirm")
+    ):
+        # Apply the status change.
+        status_id = request.form.get("status_id", 0, type=int)
+        start = request.form.get("start", 1, type=int)
+        end = request.form.get("end", len(pages), type=int)
+        start = max(1, min(start, len(pages)))
+        end = max(start, min(end, len(pages)))
+
+        target_pages = pages[start - 1 : end]
+        page_ids = [p.id for p in target_pages]
+
+        # Fetch latest revision content for each page.
+        latest_rev = (
+            select(
+                db.Revision.page_id,
+                sqla.func.max(db.Revision.id).label("max_id"),
+            )
+            .where(db.Revision.page_id.in_(page_ids))
+            .group_by(db.Revision.page_id)
+            .subquery()
+        )
+        rows = session.execute(
+            select(db.Revision.page_id, db.Revision.content).join(
+                latest_rev, db.Revision.id == latest_rev.c.max_id
+            )
+        ).all()
+        content_map = {pid: content for pid, content in rows}
+
+        revision_batch = db.RevisionBatch(user_id=current_user.id)
+        session.add(revision_batch)
+        session.flush()
+
+        from ambuda.utils.revisions import add_revision
+
+        for page in target_pages:
+            content = content_map.get(page.id, "")
+            add_revision(
+                page=page,
+                summary="Batch update status",
+                content=content,
+                version=page.version,
+                author_id=current_user.id,
+                status_id=status_id,
+                batch_id=revision_batch.id,
+                session=session,
+            )
+
+        flash(f"Updated status for {len(target_pages)} image(s).", "success")
+        return redirect(url_for("proofing.project.batch_status", slug=slug))
+
+    # Preview: gather page info for the selected range.
+    status_id = request.args.get("status_id", 0, type=int)
+    start = request.args.get("start", 1, type=int)
+    end = request.args.get("end", len(pages), type=int)
+    start = max(1, min(start, len(pages)))
+    end = max(start, min(end, len(pages)))
+
+    preview_pages = None
+    preview_status = None
+    latest_content = {}
+    if status_id and request.args:
+        preview_pages = pages[start - 1 : end]
+        preview_status = next((s for s in statuses if s.id == status_id), None)
+
+        # Fetch latest revision content for each preview page in one query.
+        if preview_pages:
+            page_ids = [p.id for p in preview_pages]
+            latest_rev = (
+                select(
+                    db.Revision.page_id,
+                    sqla.func.max(db.Revision.id).label("max_id"),
+                )
+                .where(db.Revision.page_id.in_(page_ids))
+                .group_by(db.Revision.page_id)
+                .subquery()
+            )
+            rows = session.execute(
+                select(db.Revision.page_id, db.Revision.content).join(
+                    latest_rev, db.Revision.id == latest_rev.c.max_id
+                )
+            ).all()
+            latest_content = {pid: content for pid, content in rows}
+
+    return render_template(
+        "proofing/projects/batch-status.html",
+        project=project_,
+        statuses=statuses,
+        total_pages=len(pages),
+        start=start,
+        end=end,
+        status_id=status_id,
+        form=form,
+        preview_pages=preview_pages,
+        preview_status=preview_status,
+        latest_content=latest_content,
+    )
+
+
 @bp.route("/<slug>/tools/uncovered-blocks")
 @p2_required
 def uncovered_blocks(slug):

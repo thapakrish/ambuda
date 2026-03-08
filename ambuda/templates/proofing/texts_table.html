@@ -83,7 +83,7 @@
           <a href="{{ url_for('proofing.tagging.text', text_slug=text.slug) }}"
              class="text-sky-900 hover:underline">{{ _('Tags') }}</a>
 
-          {% for coll in text.collections %}
+          {% for coll in text.collections|sort(attribute='title') %}
           <span class="text-xs bg-sky-50 text-sky-700 px-1.5 py-0.5 rounded">{{ coll.title }}</span>
           {% endfor %}
         </div>

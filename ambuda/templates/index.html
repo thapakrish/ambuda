@@ -94,31 +94,40 @@
 
 </div>
 
+<div class="bg-slate-50 pt-px">
 {# Text listing #}
 <article id="library" class="px-6 md:px-8 mx-auto max-w-5xl pb-16 md:pb-24">
 
   {% if recent_texts %}
-  <section class="bg-slate-100 mb-16 border rounded mt-16 p-4">
-    <h2 class="mb-4 font-bold text-slate-500">{{ _('New texts') }}</h2>
-    <ul class="divide-y divide-slate-200">
-      {% for entry in recent_texts %}
-      <li>
-        <h2 class="flex justify-between items-baseline text-sm">
-          <span class="deva-serif">
-            <a href="{{ url_for('texts.text', slug=entry.text.slug) }}" class="hover:underline">
-              {{- entry.text.title | hk_to_user_script | devanagari_to_user_script -}}
-            </a>
-          </span>
-          <span class="text-xs text-slate-400">{{ entry.text.published_at.strftime('%Y-%m-%d') }}</span>
-        </h2>
-      </li>
-      {% endfor %}
-    </ul>
+  <section class="bg-slate-50 mb-8 mt-8 rounded shadow-sm border border-slate-200 border-t-2 border-t-slate-200 px-6 md:px-8 py-6 md:py-8">
+    <div class="flex flex-col md:flex-row md:gap-10">
+      <div class="md:w-1/4 shrink-0 mb-3 md:mb-0">
+        <h2 class="text-slate-900 font-bold text-2xl deva-serif">{{ _('New texts') }}</h2>
+        <p class="text-sm text-slate-500 mt-2">{{ _('The newest texts added to our library.') }} <a href="{{ url_for('site.support') }}" class="hover:underline underline">{{ _('Learn more about how you can help our library grow') }}</a>.</p>
+      </div>
+      <div class="flex-1 min-w-0">
+        <ul>
+          {% for entry in recent_texts %}
+          <li class="py-1.5 px-2">
+            <div class="flex justify-between items-start">
+              <div>
+                <a href="{{ url_for('texts.text', slug=entry.text.slug) }}" class="hover:underline text-xl deva-serif">
+                  {{- entry.text.title | hk_to_user_script | devanagari_to_user_script -}}
+                </a>
+                <div class="text-xs text-slate-400">{{ entry.text.published_at.strftime('%Y-%m-%d') }}</div>
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
   </section>
   {% endif %}
 
   {{ m.grouped_texts(grouped_entries) }}
 </article>
+</div>
 
 {# Sync session script value to localStorage for reader.js compat #}
 <script>

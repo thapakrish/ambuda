@@ -1,0 +1,107 @@
+{% extends 'proofing/base-sidebar.html' %}
+{% import "macros/components.html" as components %}
+{% import "macros/proofing.html" as m %}
+
+
+{% block title %}Set Status: {{ project.display_title }} | Ambuda{% endblock %}
+
+
+{% block sidebar %}{{ m.main_nav('projects', current_user=current_user) }}{% endblock %}
+
+
+{% block content %}
+{{ components.flash_messages() }}
+
+{{ m.project_header_nested('Set Status for Image Range', project) }}
+{{ m.project_tabs(project=project, active='tools', is_mod=current_user.is_moderator, is_p2=current_user.is_p2) }}
+
+<div class="max-w-4xl">
+  <form method="get" action="{{ url_for('proofing.project.batch_status', slug=project.slug) }}"
+        class="space-y-4 mb-8">
+    <div class="grid grid-cols-3 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">{{ _('Start image') }}</label>
+        <input type="number" name="start" value="{{ start }}" min="1" max="{{ total_pages }}"
+               class="w-full p-2 rounded border">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">{{ _('End image') }}</label>
+        <input type="number" name="end" value="{{ end }}" min="1" max="{{ total_pages }}"
+               class="w-full p-2 rounded border">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">{{ _('New status') }}</label>
+        <select name="status_id" class="w-full p-2 rounded border bg-white">
+          <option value="">—</option>
+          {% for s in statuses %}
+          <option value="{{ s.id }}" {% if s.id == status_id %}selected{% endif %}>{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <p class="text-xs text-slate-500">{{ _('%(total)d images total in this project.', total=total_pages) }}</p>
+    <button type="submit"
+        class="bg-slate-700 text-white px-4 py-2 rounded hover:bg-slate-600 text-sm">
+      {{ _('Preview') }}
+    </button>
+  </form>
+
+  {% if preview_pages is not none and preview_status %}
+  <div class="border rounded p-4 mb-6">
+    <h3 class="font-semibold text-slate-700 mb-3">
+      {{ _('Preview: set %(count)d image(s) to', count=preview_pages|length) }}
+      <span class="font-bold">{{ preview_status.name }}</span>
+    </h3>
+
+    <div class="max-h-96 overflow-y-auto border rounded">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 sticky top-0">
+          <tr>
+            <th class="text-left px-3 py-1.5 text-slate-600">{{ _('Image') }}</th>
+            <th class="text-left px-3 py-1.5 text-slate-600">{{ _('Current status') }}</th>
+            <th class="text-left px-3 py-1.5 text-slate-600">{{ _('New status') }}</th>
+            <th class="text-left px-3 py-1.5 text-slate-600">{{ _('Latest content') }}</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for page in preview_pages %}
+          <tr class="align-top">
+            <td class="px-3 py-1.5 whitespace-nowrap">{{ page.slug }}</td>
+            <td class="px-3 py-1.5 whitespace-nowrap">{{ page.status.name }}</td>
+            <td class="px-3 py-1.5 whitespace-nowrap font-medium
+              {%- if page.status.id != preview_status.id %} text-sky-700{% else %} text-slate-400{% endif %}">
+              {{ preview_status.name }}
+              {%- if page.status.id == preview_status.id %} ({{ _('no change') }}){% endif %}
+            </td>
+            <td class="px-3 py-1.5">
+              {% if latest_content.get(page.id) %}
+              <pre class="text-xs text-slate-600 whitespace-pre-wrap max-h-24 overflow-y-auto">{{ latest_content[page.id][:500] }}</pre>
+              {% else %}
+              <span class="text-slate-400">{{ _('(empty)') }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <form method="post" action="{{ url_for('proofing.project.batch_status', slug=project.slug) }}" class="mt-4">
+      {{ form.csrf_token }}
+      <input type="hidden" name="start" value="{{ start }}">
+      <input type="hidden" name="end" value="{{ end }}">
+      <input type="hidden" name="status_id" value="{{ status_id }}">
+      <input type="hidden" name="confirm" value="1">
+      <button type="submit"
+          class="bg-sky-900 text-white px-4 py-2 rounded hover:bg-sky-800 text-sm">
+        {{ _('Apply') }}
+      </button>
+    </form>
+  </div>
+
+  {% elif preview_pages is not none and not preview_status %}
+  <p class="text-sm text-red-600">{{ _('Please select a status.') }}</p>
+  {% endif %}
+</div>
+
+{% endblock %}

@@ -14,23 +14,30 @@
 <article class="p-4 md:p-0 max-w-3xl mx-auto md:my-24 md:mb-36">
   <h1 class="text-3xl font-bold mb-8">{{ _('Collections') }}</h1>
 
-  <ul class="space-y-4">
+  <div class="space-y-8">
     {% for coll in collections %}
-    <li>
+    <section>
       <a href="{{ url_for('collections.collection', slug=coll.slug) }}"
-         class="block p-4 rounded border hover:bg-slate-50 hover:border-sky-300">
-        <span class="font-medium text-xl text-sky-900">{{ coll.title }}</span>
-        {% if coll.description %}
-        <p class="text-sm text-slate-500 mt-1">{{ coll.description }}</p>
-        {% endif %}
-        {% if coll.children %}
-        <p class="text-xs text-slate-400 mt-2">
-          {{ coll.children | length }} {{ _('subcollections') }}
-        </p>
-        {% endif %}
-      </a>
-    </li>
+         class="font-medium text-2xl text-sky-900 hover:underline">{{ coll.title }}</a>
+      {% if coll.description %}
+      <p class="text-sm text-slate-500 mt-1">{{ coll.description }}</p>
+      {% endif %}
+
+      {% if coll.children %}
+      <ul class="mt-3 space-y-2 ml-4">
+        {% for child in coll.children|sort(attribute='title') %}
+        <li>
+          <a href="{{ url_for('collections.collection', slug=child.slug) }}"
+             class="text-sky-900 hover:underline">{{ child.title }}</a>
+          {% if child.description %}
+          <span class="text-sm text-slate-500">— {{ child.description }}</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
     {% endfor %}
-  </ul>
+  </div>
 </article>
 {% endblock %}
