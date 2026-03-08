@@ -103,7 +103,7 @@
             {% if loop.first %}
             <h2 class="text-slate-900 font-bold text-2xl deva-serif">{{ group.title | hk_to_user_script }}</h2>
             {% if group.description %}
-            <p class="text-sm text-slate-700 mt-2">{{ group.description }}</p>
+            <div class="text-sm text-slate-700 mt-2">{{ group.description | markdown | safe }}</div>
             {% endif %}
             <div class="text-xs text-slate-400 mt-3 space-y-0.5">
               <p>{{ group.text_count }} {{ _('text') if group.text_count == 1 else _('texts') }}</p>
@@ -114,6 +114,9 @@
             {% endif %}
             {% if sub.title %}
             <h3 class="text-slate-600 font-semibold text-lg deva-serif {% if loop.first %}mt-4{% endif %}">{{ sub.title | hk_to_user_script }}</h3>
+            {% if sub.description %}
+            <div class="text-sm text-slate-700 mt-1">{{ sub.description | markdown | safe }}</div>
+            {% endif %}
             <div class="text-xs text-slate-400 mt-1 space-y-0.5">
               <p>{{ sub.text_count }} {{ _('text') if sub.text_count == 1 else _('texts') }}</p>
               {% if sub.most_recent and sub.most_recent.text.published_at %}

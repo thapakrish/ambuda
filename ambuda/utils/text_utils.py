@@ -73,6 +73,7 @@ class SubGroup:
     """A subheading within a top-level collection group."""
 
     title: str | None
+    description: str | None
     entries: list[TextEntry]
 
     @property
@@ -143,20 +144,20 @@ def create_grouped_text_entries() -> list[CollectionGroup]:
 
     # Build ordered structure: heading → {sub → entries}
     # Use (heading, sub) insertion order to preserve collection ordering.
-    # Track top-level info: (title, description, [sub_titles])
-    top_info: list[tuple[str, str | None, list[str | None]]] = []
+    # Track top-level info: (title, description, [(sub_title, sub_description)])
+    top_info: list[tuple[str, str | None, list[tuple[str | None, str | None]]]] = []
     bucket: dict[tuple[str, str | None], list[TextEntry]] = {}
 
     for top in top_collections:
-        subs: list[str | None] = [None]
+        subs: list[tuple[str | None, str | None]] = [(None, None)]
         bucket[(top.title, None)] = []
         for child in by_parent.get(top.id, []):
-            subs.append(child.title)
+            subs.append((child.title, child.description))
             bucket[(top.title, child.title)] = []
         top_info.append((top.title, top.description, subs))
 
     fallback_description = "The texts in this collection do not have a clear category or have not yet been categorized."
-    top_info.append((fallback_heading, fallback_description, [None]))
+    top_info.append((fallback_heading, fallback_description, [(None, None)]))
     bucket[(fallback_heading, None)] = []
 
     for entry in create_text_entries():
@@ -174,10 +175,12 @@ def create_grouped_text_entries() -> list[CollectionGroup]:
     result: list[CollectionGroup] = []
     for heading, description, subs in top_info:
         groups = []
-        for sub in subs:
-            entries = bucket.get((heading, sub), [])
+        for sub_title, sub_desc in subs:
+            entries = bucket.get((heading, sub_title), [])
             if entries:
-                groups.append(SubGroup(title=sub, entries=entries))
+                groups.append(
+                    SubGroup(title=sub_title, description=sub_desc, entries=entries)
+                )
         if groups:
             result.append(
                 CollectionGroup(
