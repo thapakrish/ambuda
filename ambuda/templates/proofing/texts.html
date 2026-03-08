@@ -38,6 +38,33 @@
         </select>
       </div>
 
+      {% call m.sidebar_field(_('Project')) %}
+        <div x-data="projectPicker()" @click.away="open = false" class="relative">
+          <input type="hidden" name="project_id" :value="selectedId">
+          <input type="text"
+                 :value="query !== null ? query : selectedLabel"
+                 @focus="open = true; query = ''"
+                 @input="query = $event.target.value"
+                 @keydown.arrow-down.prevent="sel = Math.min(sel + 1, filtered().length - 1)"
+                 @keydown.arrow-up.prevent="sel = Math.max(sel - 1, 0)"
+                 @keydown.enter.prevent="pick(filtered()[sel])"
+                 @keydown.escape.prevent="open = false; query = null"
+                 placeholder="{{ _('All projects') }}"
+                 class="w-full p-1.5 rounded border">
+          <div x-show="open" x-cloak class="absolute z-20 mt-1 w-full bg-white border rounded shadow-lg max-h-48 overflow-y-auto">
+            <button type="button" @click="pick(null)"
+                    :class="sel === 0 && !selectedId ? 'bg-blue-100' : 'hover:bg-slate-50'"
+                    class="block w-full text-left px-3 py-1.5 text-sm text-slate-500">{{ _('All projects') }}</button>
+            <template x-for="(p, i) in filtered()" :key="p.id">
+              <button type="button" @click="pick(p)"
+                      :class="i === sel ? 'bg-blue-100' : 'hover:bg-slate-50'"
+                      class="block w-full text-left px-3 py-1.5 text-sm" x-text="p.title"></button>
+            </template>
+            <div x-show="filtered().length === 0" class="px-3 py-2 text-sm text-slate-400">{{ _('No matches') }}</div>
+          </div>
+        </div>
+      {% endcall %}
+
       <label class="flex items-center gap-2 text-sm cursor-pointer">
         <input type="checkbox" name="unproofed" value="1"
                {% if unproofed_only %}checked{% endif %}>
@@ -51,7 +78,7 @@
         </button>
       </noscript>
 
-      {% if search or sort_field != 'title' or sort_dir != 'asc' or unproofed_only %}
+      {% if search or sort_field != 'title' or sort_dir != 'asc' or unproofed_only or project_id %}
       <a href="{{ url_for('proofing.texts') }}" id="reset-filters"
          class="block text-center text-sm text-slate-500 hover:text-slate-700">
         {{ _('Reset filters') }}
@@ -69,6 +96,63 @@
 
 <script>
 (function() {
+  var FILTER_PROJECTS = [
+    {% for p in filter_projects %}
+    { id: {{ p.id }}, title: {{ p.display_title|tojson }} },
+    {% endfor %}
+  ];
+
+  var DIACRITICS = {
+    'ś':'sh','Ś':'Sh','ṣ':'sh','Ṣ':'Sh','ā':'a','Ā':'A','ī':'i','Ī':'I',
+    'ū':'u','Ū':'U','ṛ':'r','Ṛ':'R','ṝ':'r','Ṝ':'R','ñ':'n','Ñ':'N',
+    'ṅ':'n','Ṅ':'N','ṇ':'n','Ṇ':'N','ṭ':'t','Ṭ':'T','ḍ':'d','Ḍ':'D','ḷ':'l','Ḷ':'L'
+  };
+  var DIACRITICS_RE = new RegExp('[' + Object.keys(DIACRITICS).join('') + ']', 'g');
+
+  function normalizeText(str) {
+    if (!str) return '';
+    if (typeof Sanscript !== 'undefined') {
+      str = Sanscript.t(str, 'devanagari', 'hk');
+    }
+    return str.toLowerCase().replace(DIACRITICS_RE, function(ch) { return DIACRITICS[ch] || ch; });
+  }
+
+  // Alpine component for the project filter dropdown.
+  window.projectPicker = function() {
+    var initial = FILTER_PROJECTS.find(function(p) { return p.id === {{ project_id|tojson }}; });
+    return {
+      projects: FILTER_PROJECTS,
+      selectedId: initial ? initial.id : '',
+      selectedLabel: initial ? initial.title : '',
+      query: null,
+      open: false,
+      sel: 0,
+      filtered: function() {
+        if (this.query === null || this.query === '') return this.projects;
+        var q = normalizeText(this.query);
+        return this.projects.filter(function(p) {
+          return normalizeText(p.title).includes(q);
+        });
+      },
+      pick: function(project) {
+        this.selectedId = project ? project.id : '';
+        this.selectedLabel = project ? project.title : '';
+        this.query = null;
+        this.open = false;
+        // Wait for Alpine to sync the :value binding, then set the DOM
+        // property (FormData reads .value, not the HTML attribute) and
+        // notify the filter IIFE.
+        this.$nextTick(function() {
+          var hidden = document.querySelector('input[name="project_id"]');
+          if (hidden) hidden.value = this.selectedId;
+          form.dispatchEvent(new Event('filter-change'));
+        }.bind(this));
+      }
+    };
+  };
+
+  // --- Filter / partial-fetch logic ---
+
   var form = document.getElementById('texts-filter-form');
   var container = document.getElementById('texts-list');
   if (!form || !container) return;
@@ -95,8 +179,7 @@
         container.innerHTML = data.html;
         clean.delete('partial');
         var qs = clean.toString();
-        var newUrl = form.action + (qs ? '?' + qs : '');
-        history.replaceState(null, '', newUrl);
+        history.replaceState(null, '', form.action + (qs ? '?' + qs : ''));
         bindPaginationLinks();
       });
   }
@@ -105,19 +188,26 @@
     container.querySelectorAll('.pagination-link').forEach(function(link) {
       link.addEventListener('click', function(e) {
         e.preventDefault();
-        var url = new URL(link.href);
-        var page = url.searchParams.get('page');
-        doFetch(new URLSearchParams({ page: page }));
+        doFetch(new URLSearchParams({ page: new URL(link.href).searchParams.get('page') }));
       });
     });
   }
 
-  // Select/dropdown and checkbox changes: immediate fetch.
-  form.querySelectorAll('select, input[type="checkbox"]').forEach(function(el) {
-    el.addEventListener('change', function() { clearTimeout(timer); doFetch(); });
+  // Selects and checkboxes: immediate fetch (event delegation).
+  form.addEventListener('change', function(e) {
+    if (e.target.tagName === 'SELECT' || e.target.type === 'checkbox') {
+      clearTimeout(timer);
+      doFetch();
+    }
   });
 
-  // Text input: debounced.
+  // Project picker dispatches this after updating the hidden input.
+  form.addEventListener('filter-change', function() {
+    clearTimeout(timer);
+    doFetch();
+  });
+
+  // Search text input: debounced.
   var searchInput = form.querySelector('input[name="q"]');
   if (searchInput) {
     searchInput.addEventListener('input', function() {
@@ -126,27 +216,28 @@
     });
   }
 
-  // Intercept normal form submit (Enter key in search) to use partial fetch.
+  // Enter key in search field.
   form.addEventListener('submit', function(e) {
     e.preventDefault();
     clearTimeout(timer);
     doFetch();
   });
 
-  // Reset link: intercept for partial fetch.
+  // Reset link.
   var resetLink = document.getElementById('reset-filters');
   if (resetLink) {
     resetLink.addEventListener('click', function(e) {
       e.preventDefault();
       form.reset();
+      var hidden = form.querySelector('input[name="project_id"]');
+      if (hidden) hidden.value = '';
       doFetch();
     });
   }
 
-  // Bind pagination links on initial load.
   bindPaginationLinks();
 
-  // Checkbox handling for batch collection editing (uses event delegation).
+  // Batch selection checkboxes (event delegation on dynamic content).
   container.addEventListener('change', function(e) {
     if (e.target.id === 'select-all-texts') {
       container.querySelectorAll('.text-checkbox').forEach(function(cb) {
@@ -155,8 +246,7 @@
     }
     var btn = document.getElementById('batch-collections-btn');
     if (btn) {
-      var checked = container.querySelectorAll('.text-checkbox:checked');
-      btn.classList.toggle('hidden', checked.length === 0);
+      btn.classList.toggle('hidden', container.querySelectorAll('.text-checkbox:checked').length === 0);
     }
   });
 })();

@@ -34,6 +34,7 @@ from ambuda import database as db
 from ambuda import queries as q
 from ambuda.enums import SitePageStatus
 from ambuda.tasks import projects as project_tasks
+from ambuda.utils.slug import normalize_for_search
 from ambuda.utils.text_validation import try_parse_text_report
 from ambuda.views.proofing.decorators import moderator_required, p2_required
 
@@ -680,6 +681,7 @@ def texts():
     sort_field = request.args.get("sort", "title", type=str)
     sort_dir = request.args.get("sort_dir", "asc", type=str)
     unproofed_only = request.args.get("unproofed", "", type=str) == "1"
+    project_id = request.args.get("project_id", 0, type=int)
 
     if sort_field not in ("title", "project", "created"):
         sort_field = "title"
@@ -703,13 +705,27 @@ def texts():
                 db.Project.slug, db.Project.display_title
             ),
             orm.selectinload(db.Text.author).load_only(db.Author.name),
+            orm.selectinload(db.Text.collections),
         )
     )
 
+    # For search, normalize the query and match against all text titles in Python
+    # so that Devanagari, IAST, and HK queries all work interchangeably.
+    search_ids = None
     if search:
-        stmt = stmt.where(db.Text.title.ilike(f"%{search}%"))
+        norm_query = normalize_for_search(search)
+        id_title_rows = session.execute(select(db.Text.id, db.Text.title)).all()
+        search_ids = [
+            tid
+            for tid, title in id_title_rows
+            if norm_query in normalize_for_search(title)
+        ]
+        stmt = stmt.where(db.Text.id.in_(search_ids))
+
     if unproofed_only:
         stmt = stmt.where(db.Text.status == db.TextStatus.P0)
+    if project_id:
+        stmt = stmt.where(db.Text.project_id == project_id)
 
     sort_column = {
         "title": db.Text.title,
@@ -723,10 +739,12 @@ def texts():
 
     # Count total before pagination.
     count_stmt = select(func.count()).select_from(db.Text)
-    if search:
-        count_stmt = count_stmt.where(db.Text.title.ilike(f"%{search}%"))
+    if search_ids is not None:
+        count_stmt = count_stmt.where(db.Text.id.in_(search_ids))
     if unproofed_only:
         count_stmt = count_stmt.where(db.Text.status == db.TextStatus.P0)
+    if project_id:
+        count_stmt = count_stmt.where(db.Text.project_id == project_id)
     total = session.execute(count_stmt).scalar()
     total_pages = ceil(total / per_page) if total > 0 else 1
 
@@ -768,11 +786,21 @@ def texts():
         sort_field=sort_field,
         sort_dir=sort_dir,
         unproofed_only=unproofed_only,
+        project_id=project_id,
     )
 
     if request.args.get("partial"):
         html = render_template("proofing/texts_table.html", **template_vars)
         return jsonify(html=html, total=total)
+
+    # Fetch projects that have at least one text, for the filter dropdown.
+    filter_projects = (
+        session.query(db.Project)
+        .filter(db.Project.texts.any())
+        .order_by(db.Project.display_title)
+        .all()
+    )
+    template_vars["filter_projects"] = filter_projects
 
     return render_template("proofing/texts.html", **template_vars)
 

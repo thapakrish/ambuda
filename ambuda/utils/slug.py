@@ -46,6 +46,21 @@ _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 _TRIM_RE = re.compile(r"^-+|-+$")
 
 
+def normalize_for_search(s: str) -> str:
+    """Normalize a Sanskrit string (Devanagari, IAST, or HK) to lowercase ASCII.
+
+    Used for fuzzy search matching across scripts.
+    """
+    if not s:
+        return ""
+    hk = transliterate(s, Scheme.Devanagari, Scheme.HarvardKyoto)
+    if not hk:
+        hk = s
+    hk = hk.lower()
+    hk = _DIACRITICS_RE.sub(lambda m: _DIACRITICS.get(m.group(), m.group()), hk)
+    return hk
+
+
 def title_to_slug(s: str) -> str:
     """Convert a Sanskrit title (Devanagari or IAST) to a URL slug."""
     if not s:
