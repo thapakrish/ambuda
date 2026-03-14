@@ -51,7 +51,7 @@ class ExportScheme(StrEnum):
 
     @property
     def slug(self) -> str:
-        """The file-readable name of this scheme (fol filenames, eg)."""
+        """The file-readable name of this scheme (for filenames, eg)."""
         return self.value.lower()
 
     @property
@@ -79,8 +79,13 @@ class ExportConfig(BaseModel):
     #: The output scheme for this export. If not set, use Devanagari.
     scheme: ExportScheme | None = None
 
-    def slug(self, text: db.Text) -> str:
-        return self.slug_pattern.format(text.slug)
+    _S3_PREFIX = "assets/text-exports"
+
+    def slug(self, text_slug: str) -> str:
+        return self.slug_pattern.format(text_slug)
+
+    def s3_path(self, bucket: str, text_slug: str) -> S3Path:
+        return S3Path(bucket, f"{self._S3_PREFIX}/{self.slug(text_slug)}")
 
     @cached_property
     def suffix(self) -> str:
@@ -88,6 +93,40 @@ class ExportConfig(BaseModel):
 
     def matches(self, filename: str) -> bool:
         return filename.endswith(self.suffix)
+
+
+class BulkExportType(StrEnum):
+    """Export types specific to batch exports.
+
+    These are basically 1:1 with regular export types, but this may change in the future, so
+    for now, model them separately.
+    """
+
+    #: Bulk export of TEI XML
+    XML = "xml"
+
+
+class BulkExportConfig(BaseModel):
+    #: A human-readable label for this export, for UIs etc.
+    label: str
+    #: The specific bulk export type.
+    type: BulkExportType
+    #: The filename pattern for this export. Patterns must be unique across
+    #: export configs.
+    slug_pattern: str
+
+    _S3_PREFIX = "assets/text-exports"
+
+    @property
+    def slug(self) -> str:
+        return self.slug_pattern
+
+    def s3_path(self, bucket: str) -> S3Path:
+        return S3Path(bucket, f"{self._S3_PREFIX}/{self.slug}")
+
+    @property
+    def mime_type(self) -> str:
+        return "application/zip"
 
 
 EXPORTS = [
@@ -131,6 +170,15 @@ EXPORTS = [
         slug_pattern="{}-vocab.csv",
         mime_type="text/csv",
     ),
+]
+
+
+BULK_EXPORTS = [
+    BulkExportConfig(
+        label="All TEI XML files",
+        type=BulkExportType.XML,
+        slug_pattern="ambuda-xml.zip",
+    )
 ]
 
 
@@ -215,7 +263,9 @@ def create_plain_text(text: db.Text, file_path: Path, xml_path: Path) -> None:
 
         is_first = True
         ns = "{http://www.tei-c.org/ns/1.0}"
-        for event, elem in etree.iterparse(str(xml_path), events=("end",)):
+        for event, elem in etree.iterparse(
+            str(xml_path), events=("end",), recover=True
+        ):
             parent = elem.getparent()
             if parent is not None and parent.tag in (f"{ns}body", f"{ns}div"):
                 slug = elem.get("n")
@@ -278,7 +328,9 @@ def create_pdf(
         typst_file.write(header)
 
         ns = "{http://www.tei-c.org/ns/1.0}"
-        for event, elem in etree.iterparse(str(xml_path), events=("end",)):
+        for event, elem in etree.iterparse(
+            str(xml_path), events=("end",), recover=True
+        ):
             parent = elem.getparent()
             if parent is not None and parent.tag in (f"{ns}body", f"{ns}div"):
                 slug = elem.get("n")
@@ -499,8 +551,9 @@ def create_or_update_xml_export(
             sha256_hash.update(chunk)
     tei_checksum = sha256_hash.hexdigest()
 
-    export_slug = f"{text_slug}.xml"
-    s3_path = S3Path(s3_bucket, f"text-exports/{export_slug}")
+    xml_config = next(e for e in EXPORTS if e.type == ExportType.XML)
+    export_slug = xml_config.slug(text_slug)
+    s3_path = xml_config.s3_path(s3_bucket, text_slug)
     s3_path.upload_file(tei_path)
 
     write_cached_xml(cache_dir, text_slug, tei_path)

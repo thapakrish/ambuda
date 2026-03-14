@@ -260,6 +260,11 @@ MODEL_CONFIG = [
                 slug="run-quality-report",
                 handler=tasks.run_quality_reports,
             ),
+            Task(
+                name="Export text archive",
+                slug="export-text-archive",
+                handler=tasks.export_text_archive,
+            ),
         ],
         display_field="slug",
         enum_fields={"status": TextStatus},
@@ -310,6 +315,16 @@ MODEL_CONFIG = [
                 name="Manage tree",
                 slug="manage-tree",
                 handler=lambda **kwargs: redirect(url_for("admin.manage_collections")),
+            ),
+            Task(
+                name="Export collections",
+                slug="export-collections",
+                handler=tasks.export_collections,
+            ),
+            Task(
+                name="Import collections",
+                slug="import-collections",
+                handler=tasks.import_collections,
             ),
         ],
     ),

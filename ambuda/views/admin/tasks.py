@@ -3,6 +3,8 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+from pydantic import BaseModel, Field
+
 from flask import (
     current_app,
     request,
@@ -319,27 +321,16 @@ def import_metadata(model_name, selected_ids: list | None = None):
 
 def export_metadata(model_name, selected_ids: list | None = None):
     """Export Text metadata as JSON."""
-    session = q.get_session()
+    from ambuda.utils.text_utils import text_metadata
 
-    query = session.query(db.Text)
+    session = q.get_session()
 
     if not selected_ids:
         selected_ids = []
 
     text_ids = [int(id_str) for id_str in selected_ids]
-    query = query.filter(db.Text.id.in_(text_ids))
-
-    texts = query.all()
-    export_data = []
-    for text in texts:
-        text_dict = {
-            "slug": text.slug,
-            "title": text.title,
-            "header": text.header,
-            "config": json.loads(text.config) if text.config else None,
-            "genre": text.genre.name if text.genre else None,
-        }
-        export_data.append(text_dict)
+    texts = session.query(db.Text).filter(db.Text.id.in_(text_ids)).all()
+    export_data = [text_metadata(t) for t in texts]
 
     response = make_response(jsonify(export_data))
     response.headers["Content-Disposition"] = "attachment; filename=texts_metadata.json"
@@ -630,6 +621,147 @@ def import_projects(model_name, selected_ids: list | None = None):
     )
 
 
+class CollectionExport(BaseModel):
+    slug: str
+    title: str
+    order: int = 0
+    description: str | None = None
+    parent_slug: str | None = None
+    text_slugs: list[str] = Field(default_factory=list)
+
+
+class CollectionExportData(BaseModel):
+    collections: list[CollectionExport] = Field(default_factory=list)
+
+
+def export_collections(model_name, selected_ids: list | None = None):
+    """Export TextCollections as JSON, with hierarchy and text associations."""
+    session = q.get_session()
+    query = session.query(db.TextCollection).options(
+        selectinload(db.TextCollection.texts),
+    )
+
+    if not selected_ids:
+        selected_ids = []
+
+    collection_ids = [int(id_str) for id_str in selected_ids]
+    query = query.filter(db.TextCollection.id.in_(collection_ids))
+    collections = query.all()
+
+    # Build a lookup from id -> slug for parent references
+    all_collections = session.query(db.TextCollection).all()
+    id_to_slug = {c.id: c.slug for c in all_collections}
+
+    items = []
+    for collection in collections:
+        items.append(
+            CollectionExport(
+                slug=collection.slug,
+                title=collection.title,
+                order=collection.order,
+                description=collection.description,
+                parent_slug=id_to_slug.get(collection.parent_id)
+                if collection.parent_id
+                else None,
+                text_slugs=[t.slug for t in collection.texts],
+            )
+        )
+
+    export_data = CollectionExportData(collections=items)
+
+    response = make_response(export_data.model_dump_json(indent=2))
+    response.headers["Content-Disposition"] = (
+        "attachment; filename=collections_export.json"
+    )
+    response.headers["Content-Type"] = "application/json"
+    return response
+
+
+def import_collections(model_name, selected_ids: list | None = None):
+    """Import TextCollections from a JSON file."""
+
+    class UploadCollectionsForm(FlaskForm):
+        json_file = FileField("JSON File", validators=[FileRequired()])
+
+    form = UploadCollectionsForm()
+
+    if not form.validate_on_submit():
+        return render_template(
+            "admin/task-import-collections.html",
+            model_name=model_name,
+            form=form,
+            **get_model_configs_context(),
+        )
+
+    json_file = form.json_file.data
+    session = q.get_session()
+
+    try:
+        _check_file_size(json_file)
+        raw = json_file.stream.read()
+        export_data = CollectionExportData.model_validate_json(raw)
+
+        # First pass: create or update collections (without parent links)
+        slug_to_info: dict[str, tuple[db.TextCollection, CollectionExport]] = {}
+        success_count = 0
+        for item in export_data.collections:
+            existing = (
+                session.query(db.TextCollection).filter_by(slug=item.slug).first()
+            )
+            if existing:
+                existing.title = item.title
+                existing.order = item.order
+                existing.description = item.description
+                collection = existing
+            else:
+                collection = db.TextCollection(
+                    slug=item.slug,
+                    title=item.title,
+                    order=item.order,
+                    description=item.description,
+                )
+                session.add(collection)
+
+            slug_to_info[item.slug] = (collection, item)
+            success_count += 1
+
+        session.flush()
+
+        # Second pass: set parent references and text associations
+        for slug, (collection, item) in slug_to_info.items():
+            if item.parent_slug:
+                parent = (
+                    session.query(db.TextCollection)
+                    .filter_by(slug=item.parent_slug)
+                    .first()
+                )
+                if parent:
+                    collection.parent_id = parent.id
+
+            if item.text_slugs:
+                texts = (
+                    session.query(db.Text)
+                    .filter(db.Text.slug.in_(item.text_slugs))
+                    .all()
+                )
+                collection.texts = texts
+
+        session.commit()
+        flash(f"Successfully imported {success_count} collection(s)", "success")
+        return redirect(url_for("admin.list_model", model_name=model_name))
+
+    except Exception as e:
+        session.rollback()
+        flash(f"Error importing collections: {str(e)}", "error")
+
+    return render_template(
+        "admin/task-import-collections.html",
+        model_name=model_name,
+        form=form,
+        **get_model_configs_context(),
+    )
+
+
 def run_quality_reports(model_name, selected_ids: list | None = None):
     """Batch action to run quality reports for selected texts."""
     if not selected_ids:
@@ -720,6 +852,21 @@ def save_xml_to_disk_cache(model_name, selected_ids: list | None = None):
         headers={"initiated_by": current_user.username},
     )
     flash("Started saving XML files to disk cache.", "success")
+    return redirect(url_for("admin.list_model", model_name=model_name))
+
+
+def export_text_archive(model_name, selected_ids: list | None = None):
+    """Batch action to export all texts as a ZIP archive to S3."""
+    from ambuda.tasks.text_exports import create_text_archive
+
+    app_environment = current_app.config["AMBUDA_ENVIRONMENT"]
+
+    create_text_archive.apply_async(
+        args=(app_environment,),
+        headers={"initiated_by": current_user.username},
+    )
+
+    flash("Started text archive export for all texts.", "success")
     return redirect(url_for("admin.list_model", model_name=model_name))
 
 

@@ -1,6 +1,8 @@
 import hashlib
+import json
 import logging
 import tempfile
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,6 +14,10 @@ from ambuda.tasks import app
 from ambuda.tasks.utils import get_db_session
 from ambuda.utils import text_exports
 from ambuda.utils.text_exports import (
+    BULK_EXPORTS,
+    BulkExportConfig,
+    BulkExportType,
+    ExportConfig,
     ExportType,
     write_cached_xml,
     delete_cached_xml,
@@ -23,7 +29,7 @@ from ambuda.utils.text_exports import (
     maybe_create_tokens,
     create_vocab_list,
 )
-from pydantic import BaseModel
+from ambuda.utils.text_utils import text_metadata
 
 
 EXPORTS = {x.slug_pattern: x for x in text_exports.EXPORTS}
@@ -75,7 +81,7 @@ def create_text_export_inner(
                 logging.info(f"Downloaded XML from {xml_s3_path} to {xml_path}")
 
             # Create the export file
-            output_path = temp_dir_path / export_config.slug(text)
+            output_path = temp_dir_path / export_config.slug(text.slug)
 
             if export_config.type == ExportType.XML:
                 create_xml_file(text, output_path)
@@ -113,14 +119,12 @@ def create_text_export_inner(
                     sha256_hash.update(byte_block)
             checksum = sha256_hash.hexdigest()
 
-            export_slug = export_config.slug(text)
+            export_slug = export_config.slug(text.slug)
             logging.info(
                 f"Created {export_key} export at {output_path} (SHA256: {checksum})"
             )
 
-            bucket = config_obj.S3_BUCKET
-            key = f"text-exports/{export_slug}"
-            s3_path = S3Path(bucket, key)
+            s3_path = export_config.s3_path(config_obj.S3_BUCKET, text.slug)
             s3_path.upload_file(output_path)
             logging.info(f"Uploaded {export_key} export to {s3_path}")
 
@@ -265,3 +269,81 @@ def create_all_exports_for_text(text_id: int, app_environment: str):
         xml_task,
         group(*other_tasks),
     )
+
+
+def _get_bulk_export_config(bulk_type: BulkExportType):
+    """Look up the BulkExportConfig for a given type."""
+    for cfg in BULK_EXPORTS:
+        if cfg.type == bulk_type:
+            return cfg
+    raise ValueError(f"No BulkExportConfig for type: {bulk_type}")
+
+
+def create_text_archive_inner(app_environment, engine=None):
+    """Create a ZIP archive of all texts and upload to S3.
+
+    For each text, the ZIP contains:
+    - {slug}.xml — TEI XML (downloaded from S3 if available, otherwise generated)
+    - metadata.json — metadata for all included texts
+    """
+    bulk_config = _get_bulk_export_config(BulkExportType.XML)
+    zip_filename = bulk_config.slug
+
+    with get_db_session(app_environment, engine=engine) as (session, q, config_obj):
+        texts = session.query(db.Text).all()
+
+        if not texts:
+            logging.warning("No texts found for archive")
+            return
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir_path = Path(temp_dir)
+            metadata = []
+
+            for text in texts:
+                xml_out_path = temp_dir_path / f"{text.slug}.xml"
+
+                xml_export = (
+                    session.query(db.TextExport)
+                    .filter(
+                        db.TextExport.text_id == text.id,
+                        db.TextExport.export_type == ExportType.XML,
+                    )
+                    .first()
+                )
+
+                if xml_export and xml_export.s3_path:
+                    try:
+                        s3_path = S3Path.from_path(xml_export.s3_path)
+                        s3_path.download_file(xml_out_path)
+                        logging.info(f"Downloaded XML for {text.slug} from S3")
+                    except Exception as e:
+                        logging.warning(
+                            f"Failed to download XML for {text.slug} from S3: {e}. "
+                            "Falling back to generation."
+                        )
+                        create_xml_file(text, xml_out_path)
+                else:
+                    create_xml_file(text, xml_out_path)
+
+                metadata.append(text_metadata(text))
+
+            metadata_path = temp_dir_path / "metadata.json"
+            metadata_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False))
+
+            zip_path = temp_dir_path / zip_filename
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for entry in metadata:
+                    xml_file = temp_dir_path / f"{entry['slug']}.xml"
+                    if xml_file.exists():
+                        zf.write(xml_file, xml_file.name)
+                zf.write(metadata_path, "metadata.json")
+
+            s3_path = bulk_config.s3_path(config_obj.S3_BUCKET)
+            s3_path.upload_file(zip_path)
+            logging.info(f"Uploaded text archive to {s3_path}")
+
+
+@app.task(bind=True)
+def create_text_archive(self, app_environment):
+    create_text_archive_inner(app_environment)
