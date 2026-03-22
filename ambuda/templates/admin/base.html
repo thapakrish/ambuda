@@ -50,12 +50,14 @@
                 {% if config.tasks %}
                 <ul class="ml-3 mt-1 space-y-0.5">
                   {% for task in config.tasks %}
+                  {% if not task.batch %}
                   <li>
                     <a href="{{ url_for('admin.run_task', model_name=model_name, task_slug=task.slug) }}"
                        class="block px-3 py-1 text-xs text-slate-400 hover:text-slate-200 transition">
                       {{ task.name }}
                     </a>
                   </li>
+                  {% endif %}
                   {% endfor %}
                 </ul>
                 {% endif %}

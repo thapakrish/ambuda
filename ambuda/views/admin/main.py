@@ -65,6 +65,8 @@ class Task:
     slug: str
     #: The function to call.
     handler: Callable
+    #: If True, this task operates on selected items from the list page.
+    batch: bool = False
 
 
 @dataclass
@@ -190,6 +192,7 @@ MODEL_CONFIG = [
                 name="Regenerate pages",
                 slug="regenerate-pages",
                 handler=tasks.regenerate_pages,
+                batch=True,
             ),
         ],
         display_field="slug",
@@ -249,16 +252,19 @@ MODEL_CONFIG = [
                 name="Add genre",
                 slug="add-genre",
                 handler=tasks.add_genre_to_texts,
+                batch=True,
             ),
             Task(
                 name="Create exports",
                 slug="create-exports",
                 handler=tasks.create_exports,
+                batch=True,
             ),
             Task(
                 name="Run quality report",
                 slug="run-quality-report",
                 handler=tasks.run_quality_reports,
+                batch=True,
             ),
             Task(
                 name="Export text archive",
@@ -296,6 +302,7 @@ MODEL_CONFIG = [
                 name="Delete selected exports",
                 slug="delete-exports",
                 handler=tasks.delete_exports,
+                batch=True,
             ),
             Task(
                 name="Save XML files to disk cache",
@@ -883,7 +890,20 @@ def run_task(model_name, task_slug):
     if not task:
         abort(404)
 
-    selected_ids = request.form.getlist("selected_ids")
+    select_all = request.form.get("select_all") == "1"
+    if select_all:
+        # Query all matching IDs (respecting search filter)
+        model_class = config.model
+        session = q.get_session()
+        id_query = session.query(model_class.id)
+        search = request.form.get("search", "").strip()
+        if search and config.search_key:
+            search_col = getattr(model_class, config.search_key, None)
+            if search_col is not None:
+                id_query = id_query.filter(search_col.ilike(f"{search}%"))
+        selected_ids = [str(row.id) for row in id_query.all()]
+    else:
+        selected_ids = request.form.getlist("selected_ids")
     return task.handler(model_name=model_name, selected_ids=selected_ids)
 
 

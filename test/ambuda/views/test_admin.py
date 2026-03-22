@@ -361,6 +361,85 @@ def test_create_view__validation_error(admin_client):
     assert resp.status_code in [200, 400]
 
 
+# Task.batch tests
+
+
+def test_task_batch_default():
+    """Task.batch defaults to False."""
+    from ambuda.views.admin.main import Task
+
+    task = Task(name="test", slug="test", handler=lambda **kw: None)
+    assert task.batch is False
+
+
+def test_batch_tasks_configured_correctly():
+    """Verify which tasks are batch=True and which are not."""
+    from ambuda.views.admin.main import MODEL_CONFIG
+
+    batch_slugs = set()
+    non_batch_slugs = set()
+    for config in MODEL_CONFIG:
+        for task in config.tasks:
+            if task.batch:
+                batch_slugs.add(task.slug)
+            else:
+                non_batch_slugs.add(task.slug)
+
+    assert batch_slugs == {
+        "add-genre",
+        "create-exports",
+        "run-quality-report",
+        "delete-exports",
+        "regenerate-pages",
+    }
+    assert non_batch_slugs == {
+        "import-text",
+        "import-parse-data",
+        "import-metadata",
+        "export-metadata",
+        "import-dictionaries",
+        "import-projects",
+        "export-projects",
+        "manage-tree",
+        "save-xml-to-disk-cache",
+        "export-text-archive",
+        "export-collections",
+        "import-collections",
+    }
+
+
+def test_sidebar_hides_batch_tasks(admin_client):
+    """Batch tasks should not appear in the sidebar; global tasks should."""
+    resp = admin_client.get("/admin/Text/")
+    assert resp.status_code == 200
+
+    # Global task appears in sidebar
+    assert b"Import texts" in resp.data
+    # Batch task does NOT appear in sidebar links (it only appears inside <option> tags)
+    # "Add genre" should appear only inside an <option>, not as a sidebar <a> link
+    html = resp.data.decode()
+    # Sidebar links are <a> tags inside <aside>; batch tasks should not be there
+    aside_end = html.index("</aside>")
+    sidebar_html = html[:aside_end]
+    assert "Import texts" in sidebar_html
+    assert "Add genre" not in sidebar_html
+
+
+def test_list_dropdown_shows_only_batch_tasks(admin_client):
+    """The action dropdown should contain only batch tasks, not global tasks."""
+    resp = admin_client.get("/admin/Text/")
+    assert resp.status_code == 200
+
+    html = resp.data.decode()
+    # Batch tasks appear as <option> in the dropdown
+    assert '<option value="add-genre">Add genre</option>' in html
+    assert '<option value="create-exports">Create exports</option>' in html
+    assert '<option value="run-quality-report">Run quality report</option>' in html
+    # Global tasks should NOT appear as <option>
+    assert '<option value="import-text">' not in html
+    assert '<option value="import-parse-data">' not in html
+
+
 def test_edit_view__database_error_handling(admin_client):
     """Test that database errors are handled gracefully."""
     session = get_session()

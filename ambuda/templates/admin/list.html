@@ -13,10 +13,14 @@
     <div class="flex gap-2">
       {% if tasks %}
       <form method="POST" id="batch-form" class="flex gap-2">
+        <input type="hidden" name="select_all" id="select-all-input" value="0">
+        <input type="hidden" name="search" value="{{ search }}">
         <select name="task_slug" id="task-select" class="px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500">
           <option value="">Select an action...</option>
           {% for task in tasks %}
+          {% if task.batch %}
           <option value="{{ task.slug }}">{{ task.name }}</option>
+          {% endif %}
           {% endfor %}
         </select>
         <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">
@@ -45,17 +49,70 @@
   </div>
   {% endif %}
 
+  <div id="select-all-banner" class="hidden mb-4 px-4 py-3 bg-sky-50 border border-sky-200 rounded text-sm text-sky-800 text-center">
+    <span id="banner-page-msg">All <span class="font-semibold">{{ items|length }}</span> items on this page are selected.</span>
+    <button type="button" id="select-all-records" class="ml-2 text-sky-600 hover:text-sky-800 underline font-semibold">
+      Select all <span id="banner-total">{{ total }}</span> items
+    </button>
+    <span id="banner-all-msg" class="hidden">
+      All <span class="font-semibold" id="banner-total2">{{ total }}</span> items are selected.
+      <button type="button" id="clear-all-records" class="ml-2 text-sky-600 hover:text-sky-800 underline font-semibold">Clear selection</button>
+    </span>
+  </div>
+
   <div id="table-container">
     {% include "admin/list_table.html" %}
   </div>
 </div>
 
 <script>
+  var selectAllMode = false;
+
+  function updateBanner() {
+    var banner = document.getElementById('select-all-banner');
+    var checkboxes = document.querySelectorAll('.row-checkbox');
+    var allChecked = checkboxes.length > 0 && Array.prototype.every.call(checkboxes, function(cb) { return cb.checked; });
+    var total = parseInt(document.getElementById('banner-total').textContent);
+
+    if (allChecked && checkboxes.length < total) {
+      banner.classList.remove('hidden');
+      if (selectAllMode) {
+        document.getElementById('banner-page-msg').classList.add('hidden');
+        document.getElementById('banner-all-msg').classList.remove('hidden');
+      } else {
+        document.getElementById('banner-page-msg').classList.remove('hidden');
+        document.getElementById('banner-all-msg').classList.add('hidden');
+      }
+    } else {
+      banner.classList.add('hidden');
+      if (!allChecked) {
+        selectAllMode = false;
+        document.getElementById('select-all-input').value = '0';
+      }
+    }
+  }
+
+  document.getElementById('select-all-records')?.addEventListener('click', function() {
+    selectAllMode = true;
+    document.getElementById('select-all-input').value = '1';
+    updateBanner();
+  });
+
+  document.getElementById('clear-all-records')?.addEventListener('click', function() {
+    selectAllMode = false;
+    document.getElementById('select-all-input').value = '0';
+    var selectAllCb = document.getElementById('select-all');
+    if (selectAllCb) selectAllCb.checked = false;
+    document.querySelectorAll('.row-checkbox').forEach(function(cb) { cb.checked = false; });
+    updateBanner();
+  });
+
   document.getElementById('table-container').addEventListener('change', function(e) {
     if (e.target.id === 'select-all') {
-      const checkboxes = document.querySelectorAll('.row-checkbox');
-      checkboxes.forEach(cb => cb.checked = e.target.checked);
+      var checkboxes = document.querySelectorAll('.row-checkbox');
+      checkboxes.forEach(function(cb) { cb.checked = e.target.checked; });
     }
+    updateBanner();
   });
 
   document.getElementById('batch-form')?.addEventListener('submit', function(e) {
@@ -94,6 +151,12 @@
           .then(function(data) {
             tableContainer.innerHTML = data.html;
             recordCount.textContent = data.total + ' total records';
+            document.getElementById('banner-total').textContent = data.total;
+            document.getElementById('banner-total2').textContent = data.total;
+            document.querySelector('#batch-form input[name="search"]').value = searchInput.value.trim();
+            selectAllMode = false;
+            document.getElementById('select-all-input').value = '0';
+            updateBanner();
 
             params.delete('partial');
             const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
