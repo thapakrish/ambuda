@@ -19,7 +19,7 @@
         {{ form.json_file.label.text }}
       </label>
       {{ form.json_file(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500") }}
-      <p class="mt-1 text-xs text-slate-500">A JSON file with format: [{"slug": "...", "title": "...", "header": "...", "config": {...}, "genre": "..."}, ...]</p>
+      <p class="mt-1 text-xs text-slate-500">A JSON file with format: [{"slug": "...", "title": "...", "header": "...", "config": {...}, "collections": ["slug1", ...]}, ...]</p>
       {% if form.json_file.errors %}
         {% for error in form.json_file.errors %}
           <p class="mt-1 text-sm text-red-600">{{ error }}</p>
@@ -44,7 +44,7 @@
       <li>This will update existing texts only - it will not create new texts</li>
       <li>Each object in the JSON array must have a "slug" field</li>
       <li>Only the fields present in each object will be updated</li>
-      <li>The "genre" field should be the genre name (not ID), or null</li>
+      <li>The "collections" field should be a list of collection slugs, or null</li>
       <li>If a slug is not found, a warning will be displayed</li>
     </ul>
   </div>

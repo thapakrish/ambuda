@@ -188,10 +188,10 @@ def import_text_metadata(
     if not isinstance(metadata_list, list):
         raise ValueError("JSON file must contain a list of objects")
 
-    genre_map = {}
-    stmt = select(db.Genre)
-    for genre in session.scalars(stmt).all():
-        genre_map[genre.name] = genre.id
+    collection_map = {}
+    stmt = select(db.TextCollection)
+    for coll in session.scalars(stmt).all():
+        collection_map[coll.slug] = coll
 
     updated_count = 0
     unmatched_slugs = []
@@ -217,17 +217,17 @@ def import_text_metadata(
             text.header = item["header"]
         if "config" in item:
             text.config = json.dumps(item["config"]) if item["config"] else ""
-        if "genre" in item:
-            genre_name = item["genre"]
-            if genre_name:
-                if genre_name not in genre_map:
-                    new_genre = db.Genre(name=genre_name)
-                    session.add(new_genre)
+        if "collections" in item:
+            collection_slugs = item["collections"] or []
+            collections = []
+            for s in collection_slugs:
+                if s not in collection_map:
+                    new_coll = db.TextCollection(slug=s, title=s)
+                    session.add(new_coll)
                     session.flush()
-                    genre_map[genre_name] = new_genre.id
-                text.genre_id = genre_map[genre_name]
-            else:
-                text.genre_id = None
+                    collection_map[s] = new_coll
+                collections.append(collection_map[s])
+            text.collections = collections
 
         updated_count += 1
 
