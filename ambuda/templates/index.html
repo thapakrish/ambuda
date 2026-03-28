@@ -1,5 +1,6 @@
 {% extends 'header-main-footer.html' %}
 {% import "macros/texts.html" as m %}
+{% import "macros/icons.html" as icons %}
 
 {% set mailing_url = 'https://groups.google.com/g/learnsanskrit-announce' %}
 {% set code_url = 'https://github.com/ambuda-org/ambuda' %}
@@ -13,116 +14,136 @@
   ('about.index', 'About'),
 ] %}
 {% set mobile_only = ["proofing.index", "site.support"] %}
-{% block title %}{{ _('Ambuda') }}{% endblock %}
+{% block title %}{{ _('Ambuda - a library of Sanskrit heritage') }}{% endblock %}
 
 {% set current_locale = session.get('locale', 'en') %}
 
-{% block header %}{% endblock %}
+{% block header %}
+<div class="text-white/60 hover:text-white transition border-white/20 bg-brand"
+     style="background-image: radial-gradient(circle 1px at center, rgba(255,255,255,0.07) 1px, transparent 1px); background-size: 24px 24px;">
+{% include "include/header-login.html" with context %}
+</div>
+{% endblock %}
 
 
 {% block main %}
-{# Hero + nav = 100vh #}
-<div class="flex flex-col" style="height: 100vh;">
-  <div class="bg-brand flex-1 flex flex-col items-center justify-center text-white px-4 pt-12 md:pt-4 pb-6 md:pb-4 relative">
-    <nav class="absolute top-0 right-0 p-4 text-sm opacity-80">
-      {% if current_user.is_authenticated %}
-        {% set name = current_user.username %}
-        <a href="{{ url_for('user.summary', username=name) }}" class="hover:underline">{{ name }}</a>
-        <span class="opacity-50 mx-1">|</span>
-        <a href="{{ url_for('auth.sign_out') }}" class="hover:underline">{{ _('Sign out') }}</a>
-      {% else %}
-        <a href="{{ url_for('auth.register') }}" class="hover:underline">{{ _('Register') }}</a>
-        <span class="opacity-50 mx-1">|</span>
-        <a href="{{ url_for('auth.sign_in') }}" class="hover:underline">{{ _('Sign in') }}</a>
-      {% endif %}
-    </nav>
+<div>
+
+  <div class="flex flex-col items-center text-white px-4 pt-24 md:pt-32 pb-20 md:pb-28 bg-brand"
+       style="background-image:
+         radial-gradient(ellipse 60% 50% at 50% 40%, rgba(56,189,248,0.08) 0%, transparent 70%),
+         radial-gradient(circle 1px at center, rgba(255,255,255,0.07) 1px, transparent 1px);
+         background-size: 100% 100%, 24px 24px;">
 
     <header class="text-center deva-serif">
-      <p class="tracking-widest opacity-70 mb-3">{{ '.. zrIH ..' | hk_to_user_script }}</p>
-      <h1 class="text-4xl md:text-7xl font-bold">{{ 'ambudaH' | hk_to_user_script }}</h1>
-      <p class="mt-8 text-xl opacity-60 tracking-wide">{{ 'nAma saMskRtagranthAlayaH'|hk_to_user_script }}</p>
+      <p class="tracking-widest text-white/60 mb-3 text-sm">{{ '.. zrIH ..' | hk_to_user_script }}</p>
+      <h1 class="text-4xl md:text-7xl font-bold text-white" style="text-shadow: 0 2px 4px rgba(0,0,0,0.1);">{{ 'ambudaH' | hk_to_user_script }}</h1>
     </header>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-10 w-56 md:w-auto">
-      <a href="#library"
-         class="px-6 py-2.5 border border-sky-500 bg-sky-500 text-white font-semibold rounded hover:bg-transparent transition text-sm text-center">
-        {{ _('Explore the library') }}
-      </a>
-      <a href="{{ url_for('site.support') }}"
-         class="px-6 py-2.5 border border-white/40 text-white font-semibold rounded hover:bg-white/10 transition text-sm text-center">
-        {{ _('Help us grow') }}
-      </a>
+    <script>window.__searchItems = {{ search_items | tojson }};</script>
+    <div class="mt-8 w-full max-w-2xl relative" x-data="homeSearch(window.__searchItems)" @click.outside="open = false">
+      <div class="relative">
+        <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">{{ icons.i_search_sm() }}</span>
+        <input type="text" x-model="query" @input="search()" @keydown="onKeydown($event)"
+               class="w-full pl-10 pr-5 py-3 rounded-lg text-slate-800 bg-white/90 border border-white/50 shadow-sm focus:outline-none focus:border-sky-400 focus:shadow-[0_0_0_3px_rgba(56,189,248,0.3)] transition text-base">
+      </div>
+      <ul x-show="open" x-cloak
+          class="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-80 overflow-y-auto z-50">
+        <template x-for="(r, i) in results" :key="r.slug">
+          <li @click="go(r.slug)" @mouseenter="selectedIndex = i"
+              :class="i === selectedIndex ? 'bg-sky-50 text-sky-900' : 'text-slate-700'"
+              class="px-5 py-2.5 cursor-pointer hover:bg-sky-50 deva-serif">
+            <span x-text="r.title"></span>
+          </li>
+        </template>
+      </ul>
     </div>
 
-    <div class="absolute bottom-8 left-0 right-0 flex flex-col md:flex-row gap-3 md:gap-6 items-center justify-center text-sm opacity-70">
+    <div class="flex flex-col md:flex-row gap-3 md:gap-6 items-center justify-center text-sm text-white/80 mt-4">
       <label class="flex items-center gap-2">
-        <span class="opacity-60">{{ _('Language:') }}</span>
+        <span>{{ _('Language:') }}</span>
         <select
-          class="bg-white/10 border border-white/20 text-white rounded px-3 py-1.5 cursor-pointer"
+          class="bg-white/20 border border-white/30 text-white rounded px-3 py-1.5 cursor-pointer"
           onchange="if(this.value) window.location.href=this.value"
         >
           {% for L in ambuda_locales %}
           <option value="{{ url_for('site.set_language', slug=L.slug) }}"
-            class="text-black bg-white"
             {{ 'selected' if L.code == current_locale }}>{{ L.text }}</option>
           {% endfor %}
         </select>
       </label>
 
       <label class="flex items-center gap-2">
-        <span class="opacity-60">{{ _('Script:') }}</span>
+        <span>{{ _('Script:') }}</span>
         <select id="index-script-select"
-          class="bg-white/10 border border-white/20 text-white rounded px-3 py-1.5 cursor-pointer"
+          class="bg-white/20 border border-white/30 text-white rounded px-3 py-1.5 cursor-pointer"
           onchange="if(this.value) fetch('/script/' + this.value).finally(() => location.reload())"
         >
           {% include 'include/script-options-vidyut.html' %}
         </select>
       </label>
     </div>
-  </div>
 
-  {# Navigation bar #}
-  <nav class="bg-white border-t border-slate-200 shrink-0">
-    <div class="flex items-center justify-center flex-wrap gap-x-8 gap-y-1 px-4 py-3 text-sm font-medium text-slate-700">
-      <a href="{{ url_for('texts.index') }}" class="hover:text-sky-700 transition">{{ _('Texts') }}</a>
-      <a href="{{ url_for('dictionaries.index') }}" class="hover:text-sky-700 transition">{{ _('Dictionaries') }}</a>
-      <a href="{{ url_for('proofing.index') }}" class="hover:text-sky-700 transition">{{ _('Proofing') }}</a>
-      <a href="{{ url_for('site.donate') }}" class="hover:text-sky-700 transition" target="_blank">{{ _('Donate') }}</a>
-      <a href="{{ url_for('about.index') }}" class="hover:text-sky-700 transition">{{ _('About') }}</a>
+    <div class="flex items-center justify-center gap-3 mt-8 mb-6 w-1/2 opacity-20">
+      <span class="bg-white block flex-1 h-px"></span>
+      <span class="text-white text-xs">&#x2726;</span>
+      <span class="bg-white block flex-1 h-px"></span>
     </div>
-  </nav>
+
+    <section class="text-white/90 text-center max-w-lg text-lg deva-serif">
+      <p>
+        {{ _('Ambuda is building a complete library of Sanskrit heritage.') }}
+      </p>
+      <p>
+        <a href="{{ url_for('texts.index') }}" class="underline hover:text-white">{{ _('Explore our collection') }}</a>
+        {{ _('or') }}
+        <a href="{{ url_for('site.support') }}" class="underline hover:text-white">{{ _('learn more') }}</a>
+        {{ _('about how you can help.') }}
+      </p>
+    </section>
+  </div>
 
 </div>
 
-<div class="bg-slate-50 pt-px">
+<div class="bg-slate-100 pt-px">
 {# Text listing #}
 <article id="library" class="px-6 md:px-8 mx-auto max-w-5xl pb-16 md:pb-24">
 
-  {% if recent_texts %}
-  <section class="bg-slate-50 mb-8 mt-8 rounded shadow-sm border border-slate-200 border-t-2 border-t-slate-200 px-6 md:px-8 py-6 md:py-8">
-    <div class="flex flex-col md:flex-row md:gap-10">
-      <div class="md:w-1/4 shrink-0 mb-3 md:mb-0">
-        <h2 class="text-slate-900 font-bold text-2xl deva-serif">{{ _('New texts') }}</h2>
-        <p class="text-sm text-slate-500 mt-2">{{ _('The newest texts added to our library.') }} <a href="{{ url_for('site.support') }}" class="hover:underline underline">{{ _('Learn more about how you can help our library grow') }}</a>.</p>
-      </div>
-      <div class="flex-1 min-w-0">
-        <ul>
-          {% for entry in recent_texts %}
-          <li class="py-1.5 px-2">
-            <div class="flex justify-between items-start">
-              <div>
-                <a href="{{ url_for('texts.text', slug=entry.text.slug) }}" class="hover:underline text-xl deva-serif">
-                  {{- entry.text.title | hk_to_user_script | devanagari_to_user_script -}}
-                </a>
-                <div class="text-xs text-slate-400">{{ entry.text.published_at.strftime('%Y-%m-%d') }}</div>
-              </div>
-            </div>
-          </li>
-          {% endfor %}
-        </ul>
-      </div>
-    </div>
-  </section>
+  {% if popular_texts or recent_texts %}
+  <div class="flex flex-col md:flex-row gap-4 mb-8 mt-8">
+
+    {% if popular_texts %}
+    <section class="flex-1 rounded shadow-sm border border-slate-200 bg-white px-6 md:px-8 py-6 md:py-8">
+      <h2 class="text-slate-900 font-bold text-2xl deva-serif mb-4">{{ _('Popular texts') }}</h2>
+      <ul>
+        {% for entry in popular_texts %}
+        <li class="py-1.5">
+          <a href="{{ url_for('texts.text', slug=entry.text.slug) }}" class="hover:underline text-xl deva-serif">
+            {{- entry.text.title | hk_to_user_script | devanagari_to_user_script -}}
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {% if recent_texts %}
+    <section class="flex-1 rounded shadow-sm border border-slate-200 bg-white px-6 md:px-8 py-6 md:py-8">
+      <h2 class="text-slate-900 font-bold text-2xl deva-serif mb-4">{{ _('New texts') }}</h2>
+      <ul>
+        {% for entry in recent_texts %}
+        <li class="py-1.5 flex justify-between items-baseline">
+          <a href="{{ url_for('texts.text', slug=entry.text.slug) }}" class="hover:underline text-xl deva-serif">
+            {{- entry.text.title | hk_to_user_script | devanagari_to_user_script -}}
+          </a>
+          <span class="text-xs text-slate-400 ml-4 shrink-0">{{ entry.text.published_at.strftime('%Y-%m-%d') }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+  </div>
   {% endif %}
 
   {{ m.grouped_texts(grouped_entries) }}

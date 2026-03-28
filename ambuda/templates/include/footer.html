@@ -1,6 +1,6 @@
 {%- set index = url_for('site.index') -%}
 {%- set blog = url_for('blog.index') -%}
-{%- set discord = "https://discord.gg/7rGdTyWY7Z" -%}
+{%- set mailing_list = "https://groups.google.com/g/ambuda-discuss" -%}
 {%- set github = "https://github.com/ambuda-org/ambuda" -%}
 {%- set reddit = "https://reddit.com/u/learnsanskrit-org" -%}
 {%- set twitter = "https://twitter.com/ambuda_org" -%}
@@ -8,65 +8,98 @@
 
 
 {%- macro _column(title_url, title, items) -%}
-<section class="mr-4 mb-4 basis-32">
-  <h3 class="font-bold mb-4"><a href="{{ title_url }}">{{ title }}</a></h3>
-  <ul>
+<section class="mb-6 min-w-[8rem]">
+  <h3 class="font-semibold text-slate-300 uppercase tracking-wider text-xs mb-3">
+    {%- if title_url %}<a href="{{ title_url }}">{{ title }}</a>{% else %}{{ title }}{% endif -%}
+  </h3>
+  <ul class="space-y-1.5">
     {%- for url, name in items -%}
-    <li><a href="{{ url }}">{{ name }}</a>
+    <li><a href="{{ url }}" class="hover:text-white transition-colors">{{ name }}</a>
     {%- endfor -%}
   </ul>
 </section>
 {%- endmacro -%}
 
 
-<footer class="bg-slate-100 text-slate-800 a-hover-underline
-    text-sm p-4 md:p-12 xl:p-24 border-t border-slate-200">
-  <div class="text-center md:mr-8 mb-4">
-    <p class="a-underline text-slate-700 mb-8">{% trans %}
-    Ambuda is run entirely by volunteers for the public benefit. Learn more
-    about how you can <a href="{{ support }}">help Ambuda grow</a>.
-    {% endtrans %}</p>
+<footer class="bg-sky-950 text-slate-400 text-sm">
+
+  <div class="max-w-5xl mx-auto px-6 md:px-8 pt-12 md:pt-16 pb-8">
+
+    {# Top row: brand + tagline on the left, link columns on the right #}
+    <div class="md:flex md:gap-16">
+
+      {# Brand column #}
+      <div class="mb-8 md:mb-0 md:max-w-xs shrink-0">
+        <a href="{{ index }}" class="text-2xl font-bold text-white deva-serif">अम्बुदः</a>
+        <p class="mt-3 leading-relaxed">{% trans %}
+        A free and open library of Sanskrit heritage, run entirely by volunteers.
+        {% endtrans %}</p>
+        <a href="{{ support }}" class="inline-block mt-3 text-sky-400 hover:text-sky-300 transition-colors">{{ _('Help us grow') }} &rarr;</a>
+      </div>
+
+      {# Link columns #}
+      <div class="flex-1 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-2">
+
+        {{ _column(url_for('texts.index'), _('Library'), [
+            (url_for('texts.index'), _('Texts')),
+            (url_for('dictionaries.index'), _('Dictionaries')),
+            (url_for('proofing.index'), _('Proofing')),
+        ]) }}
+
+        {{ _column(url_for("about.index"), _('About'), [
+            (url_for('about.mission'), _('Mission')),
+            (url_for('about.values'), _('Values')),
+            (url_for('about.people.index'), _('People')),
+            (url_for('about.code_and_data'), _('Code and Data')),
+        ]) }}
+
+        {{ _column(none, _('Community'), [
+            (blog, _('Blog')),
+            (mailing_list, _('Mailing List')),
+            (github, _('GitHub')),
+        ]) }}
+
+        {{ _column(url_for('site.donate'), _('Support'), [
+            (url_for('site.donate'), _('Donate')),
+            (url_for('site.sponsor'), _('Sponsor a book')),
+            (url_for('site.support'), _('Volunteer')),
+        ]) }}
+
+      </div>
+    </div>
+
+    {# Bottom bar #}
+    <div class="border-t border-sky-900 mt-10 pt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3 text-slate-500 text-xs">
+      <div class="flex flex-wrap gap-x-4 gap-y-1">
+        <a href="{{ url_for('about.terms') }}" class="hover:text-slate-300 transition-colors">{{ _('Terms') }}</a>
+        <a href="{{ url_for('about.privacy') }}" class="hover:text-slate-300 transition-colors">{{ _('Privacy') }}</a>
+        <a href="{{ url_for('about.contact') }}" class="hover:text-slate-300 transition-colors">{{ _('Contact') }}</a>
+      </div>
+      {%- set current_locale = session.get('locale', 'en') -%}
+      <div class="flex items-center gap-4">
+        <label class="flex items-center gap-1.5">
+          <span>{{ _('Language:') }}</span>
+          <select
+            class="bg-sky-900 border border-sky-800 text-slate-300 rounded px-2 py-1 cursor-pointer text-xs"
+            onchange="if(this.value) window.location.href=this.value"
+          >
+            {% for L in ambuda_locales %}
+            <option value="{{ url_for('site.set_language', slug=L.slug) }}"
+              {{ 'selected' if L.code == current_locale }}>{{ L.text }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="flex items-center gap-1.5">
+          <span>{{ _('Script:') }}</span>
+          <select
+            class="bg-sky-900 border border-sky-800 text-slate-300 rounded px-2 py-1 cursor-pointer text-xs"
+            onchange="if(this.value) fetch('/script/' + this.value).finally(() => location.reload())"
+          >
+            {% include 'include/script-options-vidyut.html' %}
+          </select>
+        </label>
+      </div>
+    </div>
+
   </div>
-
-  <div class="md:flex flex-wrap justify-between max-w-3xl text-slate-600 mx-auto">
-  {{ _column(url_for('site.index'), _('Ambuda'), [
-      (url_for('texts.index'), _('Texts')),
-      (url_for('dictionaries.index'), _('Dictionaries')),
-      (url_for('proofing.index'), _('Proofing')),
-      (url_for('about.contact'), _('Contact')),
-  ]) }}
-
-  {{ _column(url_for("about.index"), _('About'), [
-      (url_for('about.mission'), _('Mission')),
-      (url_for('about.values'), _('Values')),
-      (url_for('about.people.index'), _('People')),
-      (url_for('about.code_and_data'), _('Code and Data')),
-      (url_for('about.terms'), _('Terms of Use')),
-      (url_for('about.privacy'), _('Privacy Policy')),
-  ]) }}
-
-  {{ _column(url_for('site.donate'), _('Join Us'), [
-      (url_for('site.donate'), _('Donate')),
-      (url_for('site.sponsor'), _('Sponsor a book')),
-      (url_for('site.support'), _('Support')),
-  ]) }}
-
-  {{ _column(none, _('Community'), [
-      (blog, _('Blog')),
-      (discord, _('Discord')),
-      (github, _('GitHub')),
-      (reddit, _('Reddit')),
-      (twitter, _('Twitter')),
-  ]) }}
-
-  <section class="mr-4 mb-4">
-    <h3 class="font-bold mb-4">{{ _('Languages') }}</h3>
-    <ul>
-      {% for L in ambuda_locales %}
-      <li><a href="{{ url_for('site.set_language', slug=L.slug) }}">{{ L.text }}</a></li>
-      {% endfor %}
-    </ul>
-  </section>
-  </div>
-
 </footer>

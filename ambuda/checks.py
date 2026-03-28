@@ -168,8 +168,7 @@ def _check_database_engine(engine: Engine):
         _warn()
         _warn("    https://ambuda.readthedocs.io/en/latest/managing-the-database.html")
         _warn()
-        _warn("If the error persists, please ping the #backend channel on the")
-        _warn("Ambuda Discord server (https://discord.gg/7rGdTyWY7Z).")
+        _warn("If the error persists, please file a GitHub issue.")
         sys.exit(1)
     else:
         # Style the output to match Flask's styling.

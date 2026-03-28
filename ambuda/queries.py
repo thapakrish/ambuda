@@ -357,6 +357,9 @@ class Query:
         stmt = select(db.BlogPost).order_by(db.BlogPost.created_at.desc())
         return list(self.session.scalars(stmt).all())
 
+    def site_config(self) -> db.SiteConfig | None:
+        return self.session.scalars(select(db.SiteConfig)).first()
+
     def project_sponsorships(self) -> list[db.ProjectSponsorship]:
         results = list(self.session.scalars(select(db.ProjectSponsorship)).all())
         return sorted(results, key=lambda s: s.sa_title or s.en_title)
@@ -597,6 +600,17 @@ def blog_posts() -> list[db.BlogPost]:
     """Fetch all blog posts."""
     query = Query(get_session())
     return query.blog_posts()
+
+
+def site_config():
+    """Fetch the singleton site config, or return defaults."""
+    from ambuda.models.site import SiteConfigData
+
+    query = Query(get_session())
+    row = query.site_config()
+    if row:
+        return row.parsed()
+    return SiteConfigData()
 
 
 def project_sponsorships() -> list[db.ProjectSponsorship]:

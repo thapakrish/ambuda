@@ -13,8 +13,8 @@ As a library project, we value trust, sustainability, and long-term thinking in
 everything we do.
 
 From a community perspective, we send out regular project updates on our mailing
-list, track technical work on GitHub, and have more open discussion on Discord.
-Everyone is welcome to join in on our ongoing discussion.
+list and host most discussion there as well. Everyone is welcome to join in on our
+ongoing discussion.
 
 From a code perspective, we build in public so that everyone can see how our project
 is doing and participate in it themselves. It means that we bias toward obvious and

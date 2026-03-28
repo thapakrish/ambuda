@@ -106,7 +106,7 @@ In these commands, arguments in <angle-brackets> must be supplied by you:
 
 To start the development server, run `make devserver`.
 
-For help, join our Discord: https://discord.gg/7rGdTyWY7Z
+For help, join our mailing list: https://groups.google.com/g/ambuda-discuss
 
 Happy coding!
 EOF

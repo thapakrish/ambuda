@@ -12,7 +12,7 @@
 
 {% if current_user.is_moderator %}
 {% call m.p_note() %}
-{% set url = url_for('projectsponsorship.index_view') %}
+{% set url = url_for('admin.index') + 'projectsponsorship/' %}
 Moderators: <a class="underline" href="{{ url }}">Click here</a> to edit
 sponsorships.
 {% endcall %}

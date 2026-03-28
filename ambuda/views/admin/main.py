@@ -206,6 +206,12 @@ MODEL_CONFIG = [
         permission="moderator",
     ),
     ModelConfig(
+        model=db.SiteConfig,
+        list_columns=["id", "data"],
+        category=Category.SITE,
+        permission="admin",
+    ),
+    ModelConfig(
         model=db.Revision,
         list_columns=["id", "page_id", "author_id", "created_at"],
         category=Category.PROOFING,

@@ -117,7 +117,7 @@ For the corresponding JavaScript bindings and logic, see `reader.js`.
 {% macro navbar() %}
 <nav class="flex items-center justify-between fixed bg-white left-0 right-0 top-0 h-12 border-b z-50">
   <div class="flex items-center text-sm pl-4 min-w-0">
-    <a class="text-slate-400 hover:text-slate-700 shrink-0" href="{{ url_for('site.index') }}">Ambuda</a>
+    <a class="text-slate-400 hover:text-slate-700 shrink-0" href="{{ url_for('site.index') }}">अम्बुदः</a>
     <span class="text-slate-300 mx-1.5 shrink-0">/</span>
     <a class="text-slate-400 hover:text-slate-700 truncate" href="{{ url_for('texts.text', slug=text.slug) }}"
         x-text="data.text_title">

@@ -14,8 +14,26 @@ bp = Blueprint("site", __name__)
 def index():
     grouped_entries = text_utils.create_grouped_text_entries()
     recent_texts = text_utils.create_recent_text_entries()
+    all_texts = text_utils.create_text_entries()
+    search_items = [
+        {
+            "title": transliterate(
+                e.text.title, Scheme.HarvardKyoto, Scheme.Devanagari
+            ),
+            "slug": e.text.slug,
+        }
+        for e in all_texts
+    ]
+    config = q.site_config()
+    popular_slugs = config.popular_texts
+    text_by_slug = {e.text.slug: e for e in all_texts}
+    popular_texts = [text_by_slug[s] for s in popular_slugs if s in text_by_slug]
     return render_template(
-        "index.html", grouped_entries=grouped_entries, recent_texts=recent_texts
+        "index.html",
+        grouped_entries=grouped_entries,
+        recent_texts=recent_texts,
+        popular_texts=popular_texts,
+        search_items=search_items,
     )
 
 

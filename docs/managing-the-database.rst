@@ -98,7 +98,7 @@ Alembic can create common changes for you. Just run the following command::
 	alembic revision --autogenerate -m "Add my cool column"
 
 Sometimes, custom changes are needed on top. For details and pointers, ask on
-the `#backend` channel on our Discord server.
+our mailing list (https://groups.google.com/g/ambuda-discuss).
 
 
 Fixing a broken database

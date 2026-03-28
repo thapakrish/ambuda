@@ -8,6 +8,7 @@ import HTMLPoller from './html-poller';
 import Reader from './reader';
 import SortableList from './sortable-list';
 import { TagEditor, ProjectList } from './tag-editor';
+import HomeSearch from './home-search';
 import TextSearch from './library-search';
 
 window.addEventListener('alpine:init', () => {
@@ -18,6 +19,7 @@ window.addEventListener('alpine:init', () => {
   Alpine.data('sortableList', SortableList);
   Alpine.data('tagEditor', TagEditor);
   Alpine.data('projectList', ProjectList);
+  Alpine.data('homeSearch', HomeSearch);
   Alpine.data('textSearch', TextSearch);
 });
 

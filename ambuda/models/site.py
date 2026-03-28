@@ -5,10 +5,40 @@ these objects. By doing so, they can update the site without waiting for a site
 deploy.
 """
 
+from pydantic import BaseModel, Field
 from sqlalchemy import Column, Integer, String
 from sqlalchemy import Text as Text_
 
 from ambuda.models.base import Base, pk
+
+
+class SiteConfigData(BaseModel):
+    """Pydantic schema for site-wide configuration."""
+
+    #: Slugs of texts to feature as "popular" on the homepage.
+    popular_texts: list[str] = Field(default_factory=list)
+
+
+class SiteConfig(Base):
+    """A singleton row holding site-wide configuration as JSON.
+
+    Edit via the admin UI. The `data` column stores a JSON blob
+    validated by `SiteConfigData`.
+    """
+
+    __tablename__ = "site_config"
+
+    id = pk()
+    #: JSON blob validated by SiteConfigData.
+    data = Column(Text_, nullable=False, default="{}")
+
+    def parsed(self) -> SiteConfigData:
+        """Return validated config."""
+        return SiteConfigData.model_validate_json(self.data)
+
+    def set_data(self, config: SiteConfigData):
+        """Serialize config back to JSON."""
+        self.data = config.model_dump_json()
 
 
 class ProjectSponsorship(Base):

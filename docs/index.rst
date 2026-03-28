@@ -9,9 +9,9 @@ We wrote this documentation for anyone interested in Ambuda's technical work. It
 our architecture, design decisions, technical stack, and more.
 
 If you have any questions or comments about the material here, please reach out to us on our
-`Discord`_ server.
+`mailing list`_.
 
-.. _Discord: https://discord.gg/7rGdTyWY7Z
+.. _mailing list: https://groups.google.com/g/ambuda-discuss
 
 
 About Ambuda

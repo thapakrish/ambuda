@@ -22,7 +22,7 @@ currently use npm version 8.5.2.)
 We tested this setup on a MacBook running macOS 12.3 Monterey, but we think it
 will work on most Unix machines. If you have installation problems that seem
 specific to the Ambuda project, please file an issue on our repo or let us know
-on our Discord server.
+on our mailing list.
 
 
 Code dependencies
