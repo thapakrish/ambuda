@@ -2,6 +2,62 @@
 {% import "macros/icons.html" as i %}
 
 
+{# ── Pagination nav for catalog pages ── #}
+{% macro catalog_pagination(page, total_pages, css="") %}
+{% if total_pages > 1 %}
+<nav class="flex items-center gap-1 text-sm {{ css }}">
+  {% if page > 1 %}
+  <a href="{{ url_for('catalog.index', page=page - 1, **request.args.to_dict(flat=false)) | replace('&partial=1', '') }}"
+     class="px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 transition">&larr; {{ _('Prev') }}</a>
+  {% endif %}
+  <span class="px-2 text-slate-400">{{ page }} / {{ total_pages }}</span>
+  {% if page < total_pages %}
+  <a href="{{ url_for('catalog.index', page=page + 1, **request.args.to_dict(flat=false)) | replace('&partial=1', '') }}"
+     class="px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 transition">{{ _('Next') }} &rarr;</a>
+  {% endif %}
+</nav>
+{% endif %}
+{% endmacro %}
+
+
+{# ── Library header: hero title + decorative border + tabs, all inside bg-brand ── #}
+{% macro library_header(active, current_user) %}
+{% set tabs = [
+  ("collections", _("Collections"), url_for("texts.index")),
+  ("catalog",     _("Catalog"),     url_for("catalog.index")),
+  ("downloads",   _("Downloads"),   url_for("texts.downloads")),
+] %}
+<div class="bg-brand text-white"
+     style="background-image: radial-gradient(circle 1px at center, rgba(255,255,255,0.07) 1px, transparent 1px); background-size: 24px 24px;">
+  <div class="text-white/60 hover:text-white transition border-white/20">
+    {% include "include/header-login.html" %}
+  </div>
+
+  <header class="text-center pt-16 pb-8">
+    <h1 class="font-bold text-5xl serif">{{ _('Texts') }}</h1>
+  </header>
+
+  {# Decorative divider #}
+  <div class="flex items-center justify-center gap-3 mx-auto w-1/3 opacity-20 mb-6">
+    <span class="bg-white block flex-1 h-px"></span>
+    <span class="text-white text-xs">&#x2726;</span>
+    <span class="bg-white block flex-1 h-px"></span>
+  </div>
+
+  {# Tabs #}
+  <nav class="flex justify-center gap-8 pb-4">
+    {% for name, label, url in tabs %}
+    <a href="{{ url }}"
+       class="pb-2 text-sm font-medium transition border-b-2 serif
+         {% if active == name %}border-white text-white{% else %}border-transparent text-white/50 hover:text-white/80{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </nav>
+</div>
+{% endmacro %}
+
+
 {% macro text_header(text) %}
 <header class="text-center my-16">
 {% if text.parent %}

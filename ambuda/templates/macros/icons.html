@@ -117,6 +117,16 @@
 {% endmacro %}
 
 {# call i.exclamation_circle() first. otherwise this won't show up. #}
+{% macro i_download() %}
+<svg style="display: none" version="2.0">
+  <defs>
+    <symbol id="download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="size-4">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+    </symbol>
+  </defs>
+</svg>
+{% endmacro %}
+
 {% macro unproofed_text_icon() %}
 <a title="{{ _('This text is unproofed. Click to learn more.') }}" href="{{ url_for('about.unproofed_texts') }}">
   <svg class="inline text-red-300" width="16" height="16"><use href="#exclamation-circle"></use></svg>

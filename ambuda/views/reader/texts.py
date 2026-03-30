@@ -1,15 +1,21 @@
 """Views related to texts: title pages, sections, verses, etc."""
 
 import json
+from datetime import UTC, datetime
+
 from flask import (
     Blueprint,
     abort,
     current_app,
+    jsonify,
     redirect,
     render_template,
     session,
     url_for,
 )
+from pydantic import BaseModel
+from sqlalchemy import exists, orm, select
+
 from ambuda.utils.vidyut_shim import transliterate, Scheme
 
 import ambuda.database as db
@@ -21,9 +27,47 @@ from ambuda.utils import xml
 from ambuda.utils.json_serde import AmbudaJSONEncoder
 from ambuda.utils.text_validation import ReportSummary
 from ambuda.views.reader.schema import Block, Section
-from sqlalchemy import exists, orm, select
 
 bp = Blueprint("texts", __name__)
+
+
+class AuthorMetadataEntry(BaseModel):
+    slug: str
+    name: str
+
+
+class SourceMetadataEntry(BaseModel):
+    title: str | None = None
+    author: str | None = None
+    editor: str | None = None
+    publisher: str | None = None
+    publisher_place: str | None = None
+    publication_year: str | None = None
+
+
+class TextMetadataEntry(BaseModel):
+    slug: str
+    title: str
+    created_at: str | None = None
+    language: str | None = None
+    status: str | None = None
+    parent_slug: str | None = None
+    author: AuthorMetadataEntry | None = None
+    source: SourceMetadataEntry | None = None
+    collections: list[str] = []
+
+
+class CollectionMetadataEntry(BaseModel):
+    slug: str
+    title: str
+    parent_slug: str | None = None
+
+
+class LibraryMetadata(BaseModel):
+    api_version: str = "1"
+    created_at: str
+    collections: list[CollectionMetadataEntry]
+    texts: list[TextMetadataEntry]
 
 
 def _prev_cur_next(sections: list[db.TextSection], slug: str):
@@ -201,26 +245,154 @@ def text_resources(slug):
 
 @bp.route("/downloads/")
 def downloads():
-    """Show all available downloads."""
-    with q.get_session() as session:
-        stmt = select(db.TextExport).order_by(db.TextExport.slug)
-        exports = list(session.execute(stmt).scalars())
+    """Show bulk download archives."""
+    session = q.get_session()
+    stmt = select(db.BulkExport).order_by(db.BulkExport.slug)
+    bulk_exports = list(session.scalars(stmt).all())
 
-    return render_template("texts/downloads.html", exports=exports)
+    return render_template("texts/downloads.html", bulk_exports=bulk_exports)
+
+
+def _isoformat_utc(dt) -> str | None:
+    """Format a datetime as ISO 8601 with UTC timezone."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.isoformat()
+
+
+def _parse_source(header_xml: str | None) -> SourceMetadataEntry | None:
+    """Parse TEI header XML into a SourceMetadataEntry, or None."""
+    if not header_xml:
+        return None
+    try:
+        h = xml.parse_tei_header(header_xml)
+        source = SourceMetadataEntry(
+            title=h.tei_title if h.tei_title != "Unknown" else None,
+            author=h.source_author or None,
+            editor=h.source_editor or None,
+            publisher=h.source_publisher or None,
+            publisher_place=h.source_publisher_place or None,
+            publication_year=h.source_publication_year or None,
+        )
+        return source if source.model_dump(exclude_none=True) else None
+    except Exception:
+        return None
+
+
+def _text_to_metadata(t: db.Text) -> TextMetadataEntry:
+    """Convert a Text model to a metadata entry."""
+    author = (
+        AuthorMetadataEntry(slug=t.author.slug, name=t.author.name)
+        if t.author
+        else None
+    )
+    return TextMetadataEntry(
+        slug=t.slug,
+        title=t.title,
+        created_at=_isoformat_utc(t.created_at),
+        language=t.language,
+        status=t.status,
+        parent_slug=t.parent.slug if t.parent else None,
+        author=author,
+        source=_parse_source(t.header),
+        collections=[c.slug for c in t.collections],
+    )
+
+
+@bp.route("/downloads/metadata.json")
+def metadata_json():
+    """Return a JSON list of all texts with metadata."""
+    all_colls = q.Query(q.get_session()).all_collections()
+    coll_id_to_slug = {c.id: c.slug for c in all_colls}
+
+    data = LibraryMetadata(
+        created_at=datetime.now(UTC).isoformat(),
+        collections=[
+            CollectionMetadataEntry(
+                slug=c.slug,
+                title=c.title,
+                parent_slug=coll_id_to_slug.get(c.parent_id) if c.parent_id else None,
+            )
+            for c in all_colls
+        ],
+        texts=[_text_to_metadata(t) for t in q.texts()],
+    )
+    return jsonify(data.model_dump())
+
+
+@bp.route("/downloads/tei-headers.xml")
+def tei_headers_xml():
+    """Return a TEI corpus XML file containing all text headers."""
+    from lxml import etree
+
+    TEI_NS = "http://www.tei-c.org/ns/1.0"
+    XML_NS = "http://www.w3.org/XML/1998/namespace"
+    NSMAP = {None: TEI_NS}
+
+    corpus = etree.Element("teiCorpus", nsmap=NSMAP)
+
+    # Corpus-level teiHeader
+    corpus_header = etree.SubElement(corpus, "teiHeader")
+    file_desc = etree.SubElement(corpus_header, "fileDesc")
+    title_stmt = etree.SubElement(file_desc, "titleStmt")
+    title_el = etree.SubElement(title_stmt, "title")
+    title_el.text = "Ambuda Library — TEI Headers"
+    pub_stmt = etree.SubElement(file_desc, "publicationStmt")
+    authority = etree.SubElement(pub_stmt, "authority")
+    authority.text = "Ambuda (https://ambuda.org)"
+    date_el = etree.SubElement(pub_stmt, "date")
+    date_el.text = datetime.now(UTC).strftime("%Y-%m-%d")
+    source_desc = etree.SubElement(file_desc, "sourceDesc")
+    p = etree.SubElement(source_desc, "p")
+    p.text = "Automatically generated from the Ambuda library."
+
+    # Per-text TEI elements
+    for t in q.texts():
+        if not t.header:
+            continue
+        try:
+            header_el = etree.fromstring(t.header)
+        except etree.XMLSyntaxError:
+            continue
+
+        tei = etree.SubElement(corpus, "TEI")
+        tei.set(f"{{{XML_NS}}}id", t.slug)
+
+        # Adopt the parsed teiHeader, normalizing namespace
+        if header_el.tag == "teiHeader" or header_el.tag == f"{{{TEI_NS}}}teiHeader":
+            header_el.tag = f"{{{TEI_NS}}}teiHeader"
+        tei.append(header_el)
+
+    xml_bytes = etree.tostring(
+        corpus,
+        pretty_print=True,
+        xml_declaration=True,
+        encoding="UTF-8",
+    )
+    return current_app.response_class(xml_bytes, mimetype="application/xml")
 
 
 @bp.route("/downloads/<filename>")
 def download_file(filename):
-    text_export = q.text_export(filename)
-    if not text_export:
-        abort(404)
-
     base_url = current_app.config.get("CLOUDFRONT_BASE_URL")
-    url = text_export.asset_url(base_url) if base_url else None
-    if not url:
-        abort(404)
 
-    return redirect(url)
+    # Try per-text export first, then bulk export
+    text_export = q.text_export(filename)
+    if text_export:
+        url = text_export.asset_url(base_url) if base_url else None
+        if url:
+            return redirect(url)
+
+    session = q.get_session()
+    bulk = session.scalars(select(db.BulkExport).filter_by(slug=filename)).first()
+    if bulk:
+        url = bulk.asset_url(base_url) if base_url else None
+        if url:
+            return redirect(url)
+
+    abort(404)
 
 
 @bp.route("/<text_slug>/<section_slug>")

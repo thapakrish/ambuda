@@ -1,3 +1,4 @@
+import pytest
 from sqlalchemy import select
 
 import ambuda.database as db
@@ -13,6 +14,18 @@ def _cleanup(session, *objects):
 def test_text__str(client):
     t = db.Text(slug="test-slug", title="Test title")
     assert str(t) == "test-slug"
+
+
+@pytest.mark.parametrize("slug", ["catalog", "downloads", "foo.bar"])
+def test_text__invalid_slug(client, slug):
+    with pytest.raises(ValueError):
+        db.Text(slug=slug, title="Test")
+
+
+@pytest.mark.parametrize("slug", ["ramayana", "gita", "test-text"])
+def test_text__valid_slug(client, slug):
+    t = db.Text(slug=slug, title="Test")
+    assert t.slug == slug
 
 
 def test_user__is_ok_when_created(client):

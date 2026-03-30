@@ -1,0 +1,105 @@
+{% import "macros/icons.html" as i %}
+{% import "macros/texts.html" as m_texts %}
+
+{{ i.i_exclamation_circle() }}
+
+{# ── Text cards ── #}
+<div class="space-y-2">
+{% for entry in entries %}
+{% set header = headers.get(entry.text.id) %}
+<div class="bg-white rounded-lg border border-slate-200 px-5 py-4" data-title="{{ entry.text.title }}">
+  <div class="flex items-start justify-between gap-3">
+    <div class="min-w-0 flex-1">
+      {# Title #}
+      <a href="{{ url_for('texts.text', slug=entry.text.slug) }}"
+         class="text-2xl font-semibold text-sky-800 hover:text-sky-600 hover:underline transition deva-serif truncate block">
+        {{- entry.text.title | d | devanagari_to_user_script -}}
+      </a>
+
+      {# Translation / commentary badge #}
+      {% if entry.text.parent %}
+      {% set is_translation = entry.text.language != entry.text.parent.language %}
+      <p class="mt-1">
+        <span class="inline-flex items-center gap-1 text-xs font-medium rounded-full px-2.5 py-0.5 border
+          {{ 'bg-blue-50 text-blue-700 border-blue-200' if is_translation else 'bg-amber-50 text-amber-700 border-amber-200' }}">
+          {{ _('Translation of') if is_translation else _('Commentary on') }}
+          <a href="{{ url_for('texts.text', slug=entry.text.parent.slug) }}"
+             class="hover:underline">{{ entry.text.parent.title | d | devanagari_to_user_script }}</a>
+        </span>
+      </p>
+      {% endif %}
+
+      {# Metadata #}
+      {% set date = entry.text.published_at or entry.text.created_at %}
+      <dl class="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
+        {% if entry.author %}
+        <dt class="font-medium text-slate-400">{{ _('Author:') }}</dt>
+        <dd class="text-slate-500">{{ entry.author.name }}</dd>
+        {% endif %}
+
+        {% if header and header.has_source_info %}
+        <dt class="font-medium text-slate-400">{{ _('Source:') }}</dt>
+        <dd class="text-slate-500">
+          {%- if entry.text.project -%}
+          <a href="{{ url_for('proofing.project.summary', slug=entry.text.project.slug) }}"
+             class="text-sky-700 hover:underline">
+          {%- endif -%}
+          {{ [header.source_publisher, header.source_publisher_place, header.source_publication_year] | select | join(', ') }}
+          {%- if entry.text.project -%}</a>{%- endif -%}
+        </dd>
+        {% endif %}
+
+        {% if date %}
+        <dt class="font-medium text-slate-400">{{ _('Created on:') }}</dt>
+        <dd class="text-slate-500">{{ date.strftime('%Y-%m-%d') }}</dd>
+        {% endif %}
+
+        {% if entry.text.collections %}
+        <dt class="font-medium text-slate-400">{{ _('Categories:') }}</dt>
+        <dd class="text-slate-500">
+          {% for c in entry.text.collections %}
+          <span class="block">{{ c.title | d | devanagari_to_user_script }}</span>
+          {% endfor %}
+        </dd>
+        {% endif %}
+      </dl>
+    </div>
+
+    {# Status badge #}
+    {% for value, label, color, dot in status_badges %}
+    {% if entry.text.status == value %}
+    <span class="shrink-0 inline-flex items-center gap-1 text-sm {{ color }}">
+      <span class="w-1.5 h-1.5 rounded-full {{ dot }}"></span>
+      {{ _(label) }}
+    </span>
+    {% endif %}
+    {% endfor %}
+  </div>
+
+  {# Download links #}
+  {% if entry.text.exports %}
+  <div class="mt-2 pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2">
+    <span class="text-xs text-slate-400">{{ _('Downloads:') }}</span>
+    {% for export in entry.text.exports | sort(attribute='slug') %}
+    {% set config = export.export_config %}
+    {% if config %}
+    <a href="{{ url_for('texts.download_file', filename=export.slug) }}"
+       class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border border-slate-200 text-slate-500 hover:text-sky-700 hover:border-sky-300 transition"
+       title="{{ config.label }} ({{ export.size | human_readable_bytes }})">
+      {{ config.label }}
+    </a>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+</div>
+
+{% if not entries %}
+<div class="text-center py-16">
+  <p class="text-slate-400">{{ _('No texts match your filters.') }}</p>
+</div>
+{% endif %}
+
+{{ m_texts.catalog_pagination(page, total_pages, 'justify-center mt-6') }}

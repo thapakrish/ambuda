@@ -1,0 +1,246 @@
+{% extends 'header-main-footer.html' %}
+{% import "macros/components.html" as mc %}
+{% import "macros/texts.html" as m_texts %}
+
+
+{# ── Sidebar checkbox group macro ── #}
+{% macro checkbox_group(name, label, options, selected, count_map) %}
+<div>
+  <label class="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1.5">{{ label }}</label>
+  <div class="space-y-1">
+    {% for value, display in options %}
+    <label class="flex items-center gap-2 cursor-pointer hover:text-slate-700 text-slate-600 text-sm">
+      <input type="checkbox" name="{{ name }}" value="{{ value }}"
+             {% if value in selected %}checked{% endif %}
+             class="rounded border-slate-300 text-sky-600 focus:ring-sky-400">
+      <span class="flex-1">{{ display }}</span>
+      <span class="text-xs text-slate-400" data-count-{{ name }}="{{ value }}">{{ count_map.get(value, 0) }}</span>
+    </label>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}
+
+
+{% block title %}{{ mc.title(_('Texts')) }}{% endblock %}
+
+
+{% block header %}
+{{ m_texts.library_header('catalog', current_user) }}
+{% endblock %}
+
+
+{% block main %}
+<div class="bg-slate-100">
+
+<div class="max-w-7xl mx-auto min-h-[60vh]">
+
+  {# ── Results bar ── #}
+  <div class="px-4 md:px-8 pt-6" id="catalog-results-bar">
+    {% include "catalog/results_bar.html" %}
+  </div>
+
+  <div class="flex flex-col md:flex-row gap-0">
+
+  {# ── Sidebar ── #}
+  <form method="get" action="{{ url_for('catalog.index') }}" id="filter-form"
+        class="hidden md:flex flex-col w-80 shrink-0 bg-white rounded-lg mt-3 mb-6 ml-6 border border-slate-200 self-start">
+
+    <div class="overflow-y-auto px-5 py-5 space-y-6 text-sm">
+
+      {# Search #}
+      <div>
+        <label class="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1.5">{{ _('Search') }}</label>
+        <input type="text" name="q" value="{{ search }}"
+           placeholder="{{ _('Title or slug...') }}"
+           class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:border-sky-400 focus:ring-1 focus:ring-sky-400 outline-none transition text-sm">
+      </div>
+
+      {# Collections — checkbox tree #}
+      {% if collections %}
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <label class="block text-xs font-medium text-slate-500 uppercase tracking-wide">{{ _('Collections') }}</label>
+          {% if collection_ids %}
+          <button type="button" id="clear-collections"
+                  class="text-xs text-slate-400 hover:text-slate-600 transition">{{ _('Clear') }}</button>
+          {% endif %}
+        </div>
+        <div class="space-y-1.5 max-h-64 overflow-y-auto">
+          {% for c in collections %}
+          <div>
+            <label class="flex items-center gap-2 cursor-pointer hover:text-slate-700 text-slate-600">
+              <input type="checkbox" name="collection" value="{{ c.id }}"
+                     {% if c.id in collection_ids %}checked{% endif %}
+                     class="rounded border-slate-300 text-sky-600 focus:ring-sky-400">
+              <span class="flex-1 deva-serif">{{ c.title | d | devanagari_to_user_script }}</span>
+              <span class="text-xs text-slate-400" data-count-collection="{{ c.id }}">{{ counts.collection.get(c.id, 0) }}</span>
+            </label>
+            {% if c.children %}
+            <div class="ml-5 mt-1 space-y-1">
+              {% for child in c.children %}
+              <label class="flex items-center gap-2 cursor-pointer hover:text-slate-700 text-slate-500 text-xs">
+                <input type="checkbox" name="collection" value="{{ child.id }}"
+                       {% if child.id in collection_ids %}checked{% endif %}
+                       class="rounded border-slate-300 text-sky-600 focus:ring-sky-400">
+                <span class="flex-1 deva-serif">{{ child.title | d | devanagari_to_user_script }}</span>
+                <span class="text-slate-400" data-count-collection="{{ child.id }}">{{ counts.collection.get(child.id, 0) }}</span>
+              </label>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {{ checkbox_group('text_type', _('Text type'), [
+           ('mula', _('Mula (root text)')),
+           ('commentary', _('Commentary')),
+           ('translation', _('Translation')),
+         ], text_types, counts.type) }}
+
+      {{ checkbox_group('status', _('Status'), [
+           ('p0', _('Unproofed')),
+           ('p1', _('Proofed once')),
+           ('p2', _('Proofed twice')),
+         ], statuses, counts.status) }}
+
+      {{ checkbox_group('source', _('Source'), [
+           ('ambuda', _('Ambuda')),
+           ('external', _('External')),
+         ], sources, counts.source) }}
+
+      {# Sort #}
+      <div class="border-t border-slate-200 pt-5">
+        <label class="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1.5">{{ _('Sort') }}</label>
+        <div class="flex gap-1.5">
+          <select name="sort" class="flex-1 bg-slate-50 border border-slate-200 px-2 py-1.5 rounded-md text-sm focus:border-sky-400 focus:ring-1 focus:ring-sky-400 outline-none transition">
+            <option value="title" {% if sort_field == 'title' %}selected{% endif %}>{{ _('Title') }}</option>
+            <option value="created" {% if sort_field == 'created' %}selected{% endif %}>{{ _('Date') }}</option>
+          </select>
+          <select name="sort_dir" class="w-[6.5rem] bg-slate-50 border border-slate-200 px-2 py-1.5 rounded-md text-sm focus:border-sky-400 focus:ring-1 focus:ring-sky-400 outline-none transition">
+            <option value="asc" {% if sort_dir == 'asc' %}selected{% endif %}>{{ _('Ascending') }}</option>
+            <option value="desc" {% if sort_dir == 'desc' %}selected{% endif %}>{{ _('Descending') }}</option>
+          </select>
+        </div>
+      </div>
+
+      <noscript>
+        <button type="submit"
+            class="w-full bg-sky-900 text-white px-3 py-1.5 rounded-md hover:bg-sky-800 text-sm">
+          {{ _('Apply') }}
+        </button>
+      </noscript>
+
+    </div>
+
+    {# Reset #}
+    {% if search or collection_ids or text_types or statuses or sources or sort_field != 'title' or sort_dir != 'asc' %}
+    <div class="px-5 py-3 border-t border-slate-200">
+      <a href="{{ url_for('catalog.index') }}" id="reset-filters"
+         class="block text-center text-xs text-slate-400 hover:text-slate-600 transition">
+        {{ _('Reset all filters') }}
+      </a>
+    </div>
+    {% endif %}
+
+  </form>
+
+  {# ── Main content ── #}
+  <div class="flex-1 min-w-0 px-4 md:px-8 mt-3 mb-6">
+    <div id="catalog-results">
+      {% include "catalog/results.html" %}
+    </div>
+  </div>
+
+  </div>
+</div>
+</div>
+
+<script>
+(function() {
+  var form = document.getElementById('filter-form');
+  var container = document.getElementById('catalog-results');
+  var bar = document.getElementById('catalog-results-bar');
+  if (!form || !container) return;
+
+  var timer = null;
+
+  function doFetch() {
+    var params = new URLSearchParams(new FormData(form));
+    var clean = new URLSearchParams();
+    params.forEach(function(v, k) { if (v) clean.set(k, v); });
+    clean.set('partial', '1');
+
+    fetch(form.action + '?' + clean.toString())
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        container.innerHTML = data.html;
+        if (bar && data.bar_html) bar.innerHTML = data.bar_html;
+
+        clean.delete('partial');
+        var qs = clean.toString();
+        history.replaceState(null, '', form.action + (qs ? '?' + qs : ''));
+
+        // Update sidebar counts
+        if (data.counts) {
+          ['text_type', 'status', 'source', 'collection'].forEach(function(facet) {
+            var key = facet === 'text_type' ? 'type' : facet;
+            var map = data.counts[key] || {};
+            document.querySelectorAll('[data-count-' + facet + ']').forEach(function(el) {
+              el.textContent = map[el.getAttribute('data-count-' + facet)] || 0;
+            });
+          });
+        }
+      });
+  }
+
+  // All selects and checkboxes trigger immediate fetch
+  form.addEventListener('change', function(e) {
+    if (e.target.matches('select, input[type="checkbox"]')) {
+      clearTimeout(timer);
+      doFetch();
+    }
+  });
+
+  // Search input: debounced
+  var searchInput = form.querySelector('input[name="q"]');
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      clearTimeout(timer);
+      timer = setTimeout(doFetch, 300);
+    });
+  }
+
+  // Clear collections
+  var clearBtn = document.getElementById('clear-collections');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', function() {
+      form.querySelectorAll('input[name="collection"]').forEach(function(cb) { cb.checked = false; });
+      doFetch();
+    });
+  }
+
+  // Reset all filters
+  var resetLink = document.getElementById('reset-filters');
+  if (resetLink) {
+    resetLink.addEventListener('click', function(e) {
+      e.preventDefault();
+      form.reset();
+      form.querySelectorAll('input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
+      doFetch();
+    });
+  }
+
+  // Intercept form submit (Enter in search)
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    clearTimeout(timer);
+    doFetch();
+  });
+})();
+</script>
+
+{% endblock %}

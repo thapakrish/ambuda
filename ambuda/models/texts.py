@@ -24,7 +24,14 @@ from sqlalchemy import (
 )
 from sqlalchemy import Text as _Text
 from sqlalchemy import select, exists
-from sqlalchemy.orm import backref, relationship, Mapped, mapped_column, object_session
+from sqlalchemy.orm import (
+    backref,
+    relationship,
+    Mapped,
+    mapped_column,
+    object_session,
+    validates,
+)
 
 from ambuda.models.base import Base, foreign_key, pk
 from ambuda.utils.s3 import S3Path
@@ -99,7 +106,20 @@ class Text(Base):
     #: Primary key.
     id = pk()
     #: Human-readable ID, which we display in the URL.
+    #: Must not contain "." since dots delimit block slugs in URLs.
     slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+
+    #: Slugs that conflict with sub-routes under /texts/.
+    RESERVED_SLUGS = frozenset({"catalog", "downloads"})
+
+    @validates("slug")
+    def validate_slug(self, _key, value):
+        if "." in value:
+            raise ValueError(f"Text slug must not contain '.': {value!r}")
+        if value in self.RESERVED_SLUGS:
+            raise ValueError(f"Text slug is reserved: {value!r}")
+        return value
+
     #: The title of this text.
     title: Mapped[str] = mapped_column(String, nullable=False)
     #: Metadata for this text, as a <teiHeader> element.

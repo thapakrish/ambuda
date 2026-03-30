@@ -31,6 +31,7 @@ from ambuda.views.reader.authors import bp as authors
 from ambuda.views.reader.collections import bp as collections
 from ambuda.views.reader.parses import bp as parses
 from ambuda.views.reader.texts import bp as texts
+from ambuda.views.catalog import bp as catalog
 from ambuda.views.site import bp as site
 
 
@@ -139,6 +140,7 @@ def create_app(config_env: str):
     app.register_blueprint(auth)
     app.register_blueprint(bharati, url_prefix="/bharati")
     app.register_blueprint(blog, url_prefix="/blog")
+    app.register_blueprint(catalog, url_prefix="/texts/catalog")
     app.register_blueprint(dictionaries, url_prefix="/tools/dictionaries")
     app.register_blueprint(parses, url_prefix="/parses")
     app.register_blueprint(proofing, url_prefix="/proofing")

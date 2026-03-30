@@ -12,14 +12,14 @@ analysis and integrated dictionary support for a variety of Sanskrit works.
 
 
 {% block header %}
-{{ m.basic_header(_('Texts'), current_user) }}
+{{ m_texts.library_header('collections', current_user) }}
 {% endblock %}
 
 
 {% block main %}
 <div class="bg-slate-100">
 
-<article class="px-6 md:px-8 max-w-5xl mx-auto md:py-24 md:pb-36" x-data="textSearch">
+<article class="px-6 md:px-8 max-w-5xl mx-auto md:py-12 md:pb-36" x-data="textSearch">
   <div class="my-4">
     <input type="text" x-model="query"
            placeholder="{{ _('Search for a text ...') }}"
