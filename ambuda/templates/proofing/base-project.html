@@ -10,12 +10,14 @@ A state-of-the-art Sanskrit proofreading platform with best-in-class OCR. Join t
 
 
 {% block header %}
-{{ _m_proofing.proofing_header(current_user) }}
+{{ _m_proofing.project_hero_header(project, self.active_tab()|trim, current_user) }}
 {% endblock %}
+
+{% block active_tab %}summary{% endblock %}
 
 
 {% block main %}
-<div class="bg-slate-100">
+<div class="bg-white">
 <article class="max-w-7xl mx-auto min-h-[60vh]">
 
 {{ components.flash_messages() }}

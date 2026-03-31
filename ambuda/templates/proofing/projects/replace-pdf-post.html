@@ -1,12 +1,12 @@
-{% extends 'proofing/base-sidebar.html' %}
+{% extends 'proofing/base-project.html' %}
 {% import "macros/proofing.html" as m %}
 
+{% block active_tab %}tools{% endblock %}
 
 {% block title %}Replace PDF: {{ project.display_title }} | Ambuda{% endblock %}
 
 
 {% block content %}
-{{ m.project_header_nested('Replace PDF', project) }}
 
 <div class="prose">
 

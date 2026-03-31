@@ -5,7 +5,8 @@
 <div class="flex items-center justify-between mb-2">
   <div class="flex items-center gap-3">
     <label class="flex items-center gap-1.5 text-sm text-slate-500 cursor-pointer">
-      <input type="checkbox" id="select-all-texts">
+      <input type="checkbox" id="select-all-texts"
+             class="rounded border-slate-300 text-sky-600 focus:ring-sky-400">
       {{ _('Select all') }}
     </label>
     <p class="text-sm text-slate-500">{{ _('Showing %(start)d–%(end)d of %(total)d texts', start=((page - 1) * 100 + 1), end=[page * 100, total]|min, total=total) }}</p>
@@ -19,14 +20,14 @@
 
 <form id="batch-form" method="get" action="{{ url_for('proofing.batch_edit_collections') }}"></form>
 
-<div>
+<div class="space-y-2">
   {% for text in all_texts %}
   {% set report = report_map.get(text.id) %}
   {% set config_project_slug = config_map.get(text.id) %}
-  <div class="border-t border-slate-200">
-    <div class="flex gap-3 py-3.5">
+  <div class="bg-white rounded-lg border border-slate-200 px-5 py-4">
+    <div class="flex gap-3">
       <input type="checkbox" name="text_id" value="{{ text.id }}" form="batch-form"
-             class="text-checkbox shrink-0 mt-1">
+             class="text-checkbox shrink-0 mt-1 rounded border-slate-300 text-sky-600 focus:ring-sky-400">
       <div class="min-w-0 flex-1">
         {# Row 1: title | badges + report #}
         <div class="flex items-center justify-between gap-3">

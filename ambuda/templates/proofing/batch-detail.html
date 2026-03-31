@@ -7,8 +7,6 @@
 
 
 {% block content %}
-{{ m.header(_('Batch edit')) }}
-{{ m.proofing_tabs('recent-changes', current_user) }}
 
 <p class="text-slate-500 mb-4">{{ _('%(count)s pages edited', count=revisions|length) }}</p>
 

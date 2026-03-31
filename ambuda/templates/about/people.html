@@ -1,5 +1,4 @@
-{% extends 'about/people/base.html' %}
-{% import "macros/about.html" as m_about %}
+{% extends 'base-text.html' %}
 {% import "macros/components.html" as m %}
 
 
@@ -16,8 +15,13 @@
 {% block title %}{{ m.title(_('People')) }}{% endblock %}
 
 
-{% block people_content %}
-{{ m_about.people_tabs('core') }}
+{% block header %}
+{{ m.basic_header(_('People'), current_user) }}
+{% endblock %}
+
+
+{% block main %}
+<article class="p-4 md:p-0 max-w-xl mx-auto md:my-24 md:mb-36">
 
 <div class="prose">
 <p>{% trans %}
@@ -58,4 +62,6 @@ ornate retelling of the myth of the churning of the ocean (Murty Classical
 Library of India).
 {% endtrans %}</p>
 {% endcall %}
+
+</article>
 {% endblock %}

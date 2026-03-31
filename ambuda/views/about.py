@@ -2,7 +2,6 @@
 
 from flask import Blueprint, redirect, render_template, url_for
 
-from ambuda import queries as q
 
 bp = Blueprint("about", __name__)
 
@@ -27,18 +26,13 @@ def values():
 
 @people.route("/", endpoint="index")
 def people_index():
-    return redirect(url_for("about.people.core"))
+    return render_template("about/people.html")
 
 
 @people.route("/core")
-def core():
-    return render_template("about/people/core.html")
-
-
 @people.route("/proofing")
-def proofing():
-    contributors = q.contributor_info()
-    return render_template("about/people/proofing.html", contributors=contributors)
+def people_redirect():
+    return redirect(url_for("about.people.index"))
 
 
 @bp.route("/code-and-data")

@@ -1,4 +1,4 @@
-{% extends 'proofing/base-sidebar.html' %}
+{% extends 'proofing/base-project.html' %}
 {% import "macros/proofing.html" as m %}
 {% import "macros/talk.html" as m_talk %}
 {% import "macros/forms.html" as mf %}
@@ -6,8 +6,7 @@
 
 {% block title %}Create post on {{ project.display_title }} | Ambuda{% endblock %}
 
-
-{% block sidebar %}{{ m.main_nav('talk', current_user=current_user) }}{% endblock %}
+{% block active_tab %}talk{% endblock %}
 
 
 {% block content %}

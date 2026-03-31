@@ -1,7 +1,9 @@
-{% extends 'proofing/base-sidebar.html' %}
+{% extends 'proofing/base-project.html' %}
 
 {% import "macros/proofing.html" as m %}
 {% import "macros/forms.html" as mf %}
+
+{% block active_tab %}tools{% endblock %}
 
 
 {% macro _radio2(field, model) %}
@@ -16,8 +18,6 @@
 
 
 {% block content %}
-{{ m.project_header_nested('Replace PDF', project) }}
-
 <div class="prose">
 <p>Upload a new PDF to replace the source file for this project. Existing page
 images will be overwritten with the new PDF's pages. If the new PDF has more

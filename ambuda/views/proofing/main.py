@@ -183,36 +183,35 @@ def index():
     search = request.args.get("q", "", type=str).strip()
     sort_field = request.args.get("sort", "title", type=str)
     sort_dir = request.args.get("sort_dir", "asc", type=str)
-    genre_id = request.args.get("genre", None, type=int)
+    genre_ids = request.args.getlist("genre", type=int)
     tag_id = request.args.get("tag", None, type=int)
 
     is_p2 = current_user.is_authenticated and current_user.is_p2
-    valid_statuses = (
-        "all",
+    valid_statuses = {
         "active",
         "pending",
         "closed-copy",
         "closed-duplicate",
         "closed-quality",
+    }
+    status_filters = (
+        [s for s in request.args.getlist("status") if s in valid_statuses]
+        if is_p2
+        else []
     )
-    status_filter = (
-        request.args.get("status", "active", type=str) if is_p2 else "active"
-    )
-    if status_filter not in valid_statuses:
-        status_filter = "active"
     if sort_field not in ("title", "created"):
         sort_field = "title"
     if sort_dir not in ("asc", "desc"):
         sort_dir = "asc"
 
     projects, total = q.paginated_projects(
-        status=status_filter,
+        statuses=status_filters or None,
         page=page,
         per_page=per_page,
         sort_field=sort_field,
         sort_dir=sort_dir,
         search=search,
-        genre_id=genre_id,
+        genre_ids=genre_ids or None,
         tag_id=tag_id,
     )
     total_pages = ceil(total / per_page) if total > 0 else 1
@@ -263,13 +262,37 @@ def index():
     tags = q.project_tags()
 
     # Count projects per tag for the tag cloud.
-    from ambuda.models.proofing import project_tag_association
+    from ambuda.models.proofing import ProjectStatus, project_tag_association
 
     tag_count_stmt = select(
         project_tag_association.c.tag_id,
         func.count().label("cnt"),
     ).group_by(project_tag_association.c.tag_id)
     tag_counts = {row[0]: row[1] for row in session.execute(tag_count_stmt).all()}
+
+    # Facet counts for sidebar checkboxes.
+    status_count_stmt = select(db.Project.status, func.count()).group_by(
+        db.Project.status
+    )
+    status_count_map = {
+        {
+            ProjectStatus.ACTIVE: "active",
+            ProjectStatus.PENDING: "pending",
+            ProjectStatus.CLOSED_COPYRIGHT: "closed-copy",
+            ProjectStatus.CLOSED_DUPLICATE: "closed-duplicate",
+            ProjectStatus.CLOSED_QUALITY: "closed-quality",
+        }.get(row[0], ""): row[1]
+        for row in session.execute(status_count_stmt).all()
+    }
+
+    genre_count_stmt = (
+        select(db.Project.genre_id, func.count())
+        .filter(db.Project.genre_id.isnot(None))
+        .group_by(db.Project.genre_id)
+    )
+    genre_count_map = {
+        row[0]: row[1] for row in session.execute(genre_count_stmt).all()
+    }
 
     template_vars = dict(
         projects=projects,
@@ -279,15 +302,17 @@ def index():
         genres=genres,
         tags=tags,
         tag_counts=tag_counts,
+        status_count_map=status_count_map,
+        genre_count_map=genre_count_map,
         page=page,
         total_pages=total_pages,
         total=total,
         search=search,
         sort_field=sort_field,
         sort_dir=sort_dir,
-        genre_id=genre_id,
+        genre_ids=genre_ids,
         tag_id=tag_id,
-        status_filter=status_filter,
+        status_filters=status_filters,
     )
 
     if request.args.get("partial"):

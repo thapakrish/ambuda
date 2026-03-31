@@ -12,6 +12,7 @@
     <link rel="stylesheet" type="text/css" href="{{ asset('gen/style.css') }}">
     <link rel="icon" href="data:,">
     <title>{% block title %}{% endblock %}</title>
+    {% block extra_head %}{% endblock %}
     {% block scripts %}{% endblock %}
   </head>
   {% block body %}{% endblock %}

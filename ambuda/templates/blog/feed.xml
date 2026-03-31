@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Ambuda blog</title>
+  <link href="{{ url_for('blog.index', _external=True) }}"/>
+  <link href="{{ url_for('blog.feed', _external=True) }}" rel="self"/>
+  <id>{{ url_for('blog.index', _external=True) }}</id>
+  {% if posts %}
+  <updated>{{ posts[0].updated_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}</updated>
+  {% endif %}
+
+  {% for post in posts %}
+  <entry>
+    <title>{{ post.title|e }}</title>
+    <link href="{{ url_for('blog.post', slug=post.slug, _external=True) }}"/>
+    <id>{{ url_for('blog.post', slug=post.slug, _external=True) }}</id>
+    <published>{{ post.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}</published>
+    <updated>{{ post.updated_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}</updated>
+    <content type="html">{{ post.content|markdown|e }}</content>
+  </entry>
+  {% endfor %}
+</feed>

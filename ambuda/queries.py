@@ -170,13 +170,13 @@ class Query:
 
     def paginated_projects(
         self,
-        status: str = "active",
+        statuses: list[str] | None = None,
         page: int = 1,
         per_page: int = 25,
         sort_field: str = "title",
         sort_dir: str = "asc",
         search: str = "",
-        genre_id: int | None = None,
+        genre_ids: list[int] | None = None,
         tag_id: int | None = None,
     ) -> tuple[list[db.Project], int]:
         from ambuda.models.proofing import ProjectStatus, project_tag_association
@@ -190,9 +190,10 @@ class Query:
         }
 
         base = select(db.Project)
-        if status != "all":
-            project_status = status_map.get(status, ProjectStatus.ACTIVE)
-            base = base.filter(db.Project.status == project_status)
+        if statuses:
+            enum_values = [status_map[s] for s in statuses if s in status_map]
+            if enum_values:
+                base = base.filter(db.Project.status.in_(enum_values))
 
         if search:
             like = f"%{search}%"
@@ -201,8 +202,8 @@ class Query:
                 | db.Project.description.ilike(like)
             )
 
-        if genre_id:
-            base = base.filter(db.Project.genre_id == genre_id)
+        if genre_ids:
+            base = base.filter(db.Project.genre_id.in_(genre_ids))
 
         if tag_id:
             base = base.join(project_tag_association).filter(
@@ -244,7 +245,11 @@ class Query:
         return projects, total
 
     def project_tags(self) -> list[db.ProjectTag]:
-        return list(self.session.scalars(select(db.ProjectTag)).all())
+        return list(
+            self.session.scalars(
+                select(db.ProjectTag).order_by(db.ProjectTag.name)
+            ).all()
+        )
 
     def user_recent_projects(self, user_id: int, limit: int = 5) -> list[db.Project]:
         stmt = (

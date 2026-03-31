@@ -1,4 +1,4 @@
-{% extends 'proofing/base-sidebar.html' %}
+{% extends 'proofing/base-project.html' %}
 {% import "macros/components.html" as components %}
 {% import "macros/forms.html" as mf %}
 {% import "macros/proofing.html" as m %}
@@ -6,13 +6,10 @@
 
 {% block title %}Edit: {{ project.display_title }} | Ambuda{% endblock %}
 
-
-{% block sidebar %}{{ m.main_nav('projects', current_user=current_user) }}{% endblock %}
+{% block active_tab %}edit{% endblock %}
 
 
 {% block content %}
-{{ m.project_header_nested('Edit', project) }}
-{{ m.project_tabs(project=project, active='edit', is_mod=current_user.is_moderator, is_p2=current_user.is_p2) }}
 
 <div class="prose">
 

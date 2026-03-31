@@ -30,7 +30,7 @@ def test_complete_guide(client):
 
 def test_recent_changes(client):
     resp = client.get("/proofing/recent-changes")
-    assert ">Recent changes<" in resp.text
+    assert "Recent changes" in resp.text
 
 
 def test_create_project__unauth(client):

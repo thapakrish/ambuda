@@ -1,4 +1,4 @@
-{% extends 'proofing/base-sidebar.html' %}
+{% extends 'proofing/base-project.html' %}
 {% import "macros/components.html" as components %}
 {% import "macros/proofing-talk.html" as m_talk %}
 {% import "macros/proofing.html" as m %}
@@ -6,13 +6,10 @@
 
 {% block title %}{{ project.display_title }} | Ambuda{% endblock %}
 
-
-{% block sidebar %}{{ m.main_nav('projects', current_user=current_user) }}{% endblock %}
+{% block active_tab %}summary{% endblock %}
 
 
 {% block content %}
-<h1 class="font-bold text-3xl mb-4">{{ project.display_title }}</h1>
-{{ m.project_tabs(project=project, active='summary', is_mod=current_user.is_moderator, is_p2=current_user.is_p2) }}
 
 {% if project.description %}
 <div class="prose">

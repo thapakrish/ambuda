@@ -7,7 +7,7 @@
 <div class="space-y-3">
   {% for p in projects %}
   {% set count = pages_per_project.get(p.id, 0) %}
-  <div class="border bg-white overflow-hidden">
+  <div class="bg-white rounded-lg border border-slate-200 overflow-hidden">
 
     {# Progress bar along top edge #}
     <div class="flex h-1">
@@ -21,7 +21,7 @@
       <div class="flex items-baseline justify-between gap-2">
         <div class="flex items-baseline gap-2 min-w-0">
           {% if current_user.is_authenticated and current_user.is_p2 %}
-          <input type="checkbox" class="shrink-0 relative top-px"
+          <input type="checkbox" class="shrink-0 relative top-px rounded border-slate-300 text-sky-600 focus:ring-sky-400"
                  :checked="isSelected('{{ p.slug }}')"
                  @change="toggleSelect('{{ p.slug }}')">
           {% endif %}
@@ -65,7 +65,8 @@
               <template x-for="tag in filteredTags" :key="tag">
                 <li>
                   <label class="flex items-center gap-1.5 px-2 py-1 hover:bg-slate-100 rounded text-sm cursor-pointer">
-                    <input type="checkbox" :checked="hasTag(tag)" @change="toggle(tag)">
+                    <input type="checkbox" :checked="hasTag(tag)" @change="toggle(tag)"
+                           class="rounded border-slate-300 text-sky-600 focus:ring-sky-400">
                     <span x-text="tag"></span>
                   </label>
                 </li>
@@ -92,7 +93,7 @@
   {% endfor %}
 </div>
 
-{{ m.proofing_pagination(page, total_pages, search=search, sort_field=sort_field, sort_dir=sort_dir, genre_id=genre_id, tag_id=tag_id, status_filter=status_filter) }}
+{{ m.proofing_pagination(page, total_pages, search=search, sort_field=sort_field, sort_dir=sort_dir, genre_ids=genre_ids, tag_id=tag_id, status_filters=status_filters) }}
 
 {% else %}
 <div class="prose">

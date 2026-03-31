@@ -773,7 +773,7 @@ On wide screens, the sidebar is on the right side of a split view.
           </button>
           <div x-show="open"
                @click.outside="open = false"
-               class="absolute right-0 mt-1 w-32 bg-white border rounded shadow-lg z-10"
+               class="absolute right-0 mt-1 w-32 bg-white border rounded shadow-lg z-10 font-sans"
                x-cloak>
             {% if block_.page_url %}
             <a href="{{ block_.page_url }}"
@@ -841,7 +841,7 @@ On wide screens, the sidebar is on the right side of a split view.
             </button>
             <div x-show="open"
                  @click.outside="open = false"
-                 class="absolute right-0 mt-1 w-32 bg-white border rounded shadow-lg z-10"
+                 class="absolute right-0 mt-1 w-32 bg-white border rounded shadow-lg z-10 font-sans"
                  x-cloak>
               <a x-show="b.page_url"
                  :href="b.page_url"

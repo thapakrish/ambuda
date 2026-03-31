@@ -1,4 +1,4 @@
-{% extends 'proofing/base-sidebar.html' %}
+{% extends 'proofing/base-project.html' %}
 {% import "macros/proofing.html" as m %}
 {% import "macros/proofing-talk.html" as m_talk %}
 {% from "macros/forms.html" import field %}
@@ -6,13 +6,10 @@
 
 {% block title %}Talk: {{ project.display_title }} | Ambuda{% endblock %}
 
-
-{% block sidebar %}{{ m.main_nav('talk', current_user=current_user) }}{% endblock %}
+{% block active_tab %}talk{% endblock %}
 
 
 {% block content %}
-{{ m.project_header_nested('Talk', project) }}
-{{ m.project_tabs(project=project, active='talk', is_mod=current_user.is_moderator, is_p2=current_user.is_p2) }}
 
 <div class="my-4">
 <a class="btn btn-basic" href="{{ url_for('proofing.talk.create_thread', slug=project.slug) }}">

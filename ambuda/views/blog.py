@@ -8,7 +8,7 @@ Notes on i18n: Generally, this interface is for admins and moderators, so the
 `gettext` annotations here are quite lax.
 """
 
-from flask import Blueprint, abort, flash, redirect, render_template, url_for
+from flask import Blueprint, Response, abort, flash, redirect, render_template, url_for
 from flask_babel import lazy_gettext as _l
 from flask_login import current_user
 from flask_wtf import FlaskForm
@@ -43,7 +43,15 @@ class DeletePostForm(FlaskForm):
 def index():
     """List of all posts."""
     posts = q.blog_posts()
-    return render_template("blog/index.html", posts=posts)
+    return render_template("blog/index.html", posts=posts, blog_active="posts")
+
+
+@bp.route("/feed.xml")
+def feed():
+    """Atom feed of recent blog posts."""
+    posts = q.blog_posts()
+    xml = render_template("blog/feed.xml", posts=posts)
+    return Response(xml, content_type="application/atom+xml; charset=utf-8")
 
 
 @bp.route("/p/<slug>")
@@ -53,7 +61,10 @@ def post(slug):
     if post is None:
         abort(404)
 
-    return render_template("blog/post.html", post=post)
+    posts = q.blog_posts()
+    return render_template(
+        "blog/post.html", post=post, posts=posts, blog_active="posts"
+    )
 
 
 @bp.route("/create", methods=["GET", "POST"])
@@ -79,7 +90,7 @@ def create_post():
         flash(_l("Created post."), "success")
         return redirect(url_for("blog.index"))
 
-    return render_template("blog/create-post.html", form=form)
+    return render_template("blog/create-post.html", form=form, blog_active="create")
 
 
 @bp.route("/p/<slug>/edit", methods=["GET", "POST"])

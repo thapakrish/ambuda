@@ -1,19 +1,15 @@
-{% extends 'proofing/base-sidebar.html' %}
+{% extends 'proofing/base-project.html' %}
 {% import "macros/components.html" as components %}
 {% import "macros/proofing.html" as m %}
 
 
 {% block title %}Set Status: {{ project.display_title }} | Ambuda{% endblock %}
 
-
-{% block sidebar %}{{ m.main_nav('projects', current_user=current_user) }}{% endblock %}
+{% block active_tab %}tools{% endblock %}
 
 
 {% block content %}
 {{ components.flash_messages() }}
-
-{{ m.project_header_nested('Set Status for Image Range', project) }}
-{{ m.project_tabs(project=project, active='tools', is_mod=current_user.is_moderator, is_p2=current_user.is_p2) }}
 
 <div class="max-w-4xl">
   <form method="get" action="{{ url_for('proofing.project.batch_status', slug=project.slug) }}"

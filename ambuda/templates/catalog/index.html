@@ -1,29 +1,7 @@
 {% extends 'header-main-footer.html' %}
 {% import "macros/components.html" as mc %}
 {% import "macros/texts.html" as m_texts %}
-
-
-{# ── Sidebar checkbox group macro ── #}
-{% macro checkbox_group(name, label, options, selected, count_map) %}
-<div>
-  <div class="flex items-center justify-between mb-1.5">
-    <label class="block text-xs font-medium text-slate-500 uppercase tracking-wide">{{ label }}</label>
-    <button type="button" data-clear="{{ name }}"
-            class="text-xs text-slate-400 hover:text-slate-600 transition {% if not selected %}hidden{% endif %}">{{ _('Clear') }}</button>
-  </div>
-  <div class="space-y-1">
-    {% for value, display in options %}
-    <label class="flex items-center gap-2 cursor-pointer hover:text-slate-700 text-slate-600 text-sm">
-      <input type="checkbox" name="{{ name }}" value="{{ value }}"
-             {% if value in selected %}checked{% endif %}
-             class="rounded border-slate-300 text-sky-600 focus:ring-sky-400">
-      <span class="flex-1">{{ display }}</span>
-      <span class="text-xs text-slate-400" data-count-{{ name }}="{{ value }}">{{ count_map.get(value, 0) }}</span>
-    </label>
-    {% endfor %}
-  </div>
-</div>
-{% endmacro %}
+{% import "macros/catalog.html" as cat %}
 
 
 {% block title %}{{ mc.title(_('Texts')) }}{% endblock %}
@@ -48,17 +26,14 @@
 
   {# ── Sidebar ── #}
   <form method="get" action="{{ url_for('catalog.index') }}" id="filter-form"
-        class="hidden md:flex flex-col w-80 shrink-0 bg-white rounded-lg mt-3 mb-6 ml-6 border border-slate-200 self-start">
+        class="mt-3 mb-6 ml-6">
+    {% call cat.sidebar_panel() %}
 
-    <div class="overflow-y-auto px-5 py-5 space-y-6 text-sm">
-
-      {# Search #}
-      <div>
-        <label class="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1.5">{{ _('Search') }}</label>
+      {% call cat.sidebar_field(_('Search')) %}
         <input type="text" name="q" value="{{ search }}"
            placeholder="{{ _('Title or slug...') }}"
            class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:border-sky-400 focus:ring-1 focus:ring-sky-400 outline-none transition text-sm">
-      </div>
+      {% endcall %}
 
       {# Collections — checkbox tree #}
       {% if collections %}
@@ -110,19 +85,19 @@
       </div>
       {% endif %}
 
-      {{ checkbox_group('text_type', _('Text type'), [
+      {{ cat.checkbox_group('text_type', _('Text type'), [
            ('mula', _('Mula (root text)')),
            ('commentary', _('Commentary')),
            ('translation', _('Translation')),
          ], text_types, counts.type) }}
 
-      {{ checkbox_group('status', _('Status'), [
+      {{ cat.checkbox_group('status', _('Status'), [
            ('p0', _('Unproofed')),
            ('p1', _('Proofed once')),
            ('p2', _('Proofed twice')),
          ], statuses, counts.status) }}
 
-      {{ checkbox_group('source', _('Source'), [
+      {{ cat.checkbox_group('source', _('Source'), [
            ('ambuda', _('Ambuda')),
            ('external', _('External')),
          ], sources, counts.source) }}
@@ -149,7 +124,7 @@
         </button>
       </noscript>
 
-    </div>
+    {% endcall %}
 
     {# Reset #}
     {% if search or collection_ids or text_types or statuses or sources or sort_field != 'title' or sort_dir != 'asc' %}

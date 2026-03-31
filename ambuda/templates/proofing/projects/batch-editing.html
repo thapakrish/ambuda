@@ -1,6 +1,8 @@
-{% extends 'proofing/base.html' %}
+{% extends 'proofing/base-project.html' %}
 {% import "macros/components.html" as components %}
 {% import "macros/proofing.html" as m %}
+
+{% block active_tab %}tools{% endblock %}
 
 {% macro help_item(code, desc) -%}
 <div><code class="bg-slate-200 px-1 rounded">{{ code }}</code> - {{ desc }}</div>
@@ -45,9 +47,6 @@
 {% block main %}
 <div class="mt-8 px-4">
 {{ components.flash_messages() }}
-
-{{ m.project_header_nested('Batch Edit', project) }}
-{{ m.project_tabs(project=project, active='tools', is_p2=current_user.is_p2) }}
 
 {% set total_pages = project.pages|length %}
 {% set pages_count = pages_with_content|length %}

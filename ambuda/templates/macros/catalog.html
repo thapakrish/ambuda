@@ -1,0 +1,44 @@
+{#- Shared macros for catalog-style filter+list pages (texts catalog, proofing). -#}
+
+
+{#- The outer filter sidebar panel. Renders a white rounded container.
+    Use {% call %} to fill content. -#}
+{% macro sidebar_panel() %}
+<div class="hidden md:flex flex-col w-80 shrink-0 bg-white rounded-lg border border-slate-200 self-start">
+  <div class="overflow-y-auto px-5 py-5 space-y-6 text-sm">
+    {{ caller() }}
+  </div>
+</div>
+{% endmacro %}
+
+
+{#- A labelled field inside the sidebar panel. -#}
+{% macro sidebar_field(label) %}
+<div>
+  <label class="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1.5">{{ label }}</label>
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+
+{#- A checkbox group with counts and a Clear button. -#}
+{% macro checkbox_group(name, label, options, selected, count_map) %}
+<div>
+  <div class="flex items-center justify-between mb-1.5">
+    <label class="block text-xs font-medium text-slate-500 uppercase tracking-wide">{{ label }}</label>
+    <button type="button" data-clear="{{ name }}"
+            class="text-xs text-slate-400 hover:text-slate-600 transition {% if not selected %}hidden{% endif %}">{{ _('Clear') }}</button>
+  </div>
+  <div class="space-y-1">
+    {% for value, display in options %}
+    <label class="flex items-center gap-2 cursor-pointer hover:text-slate-700 text-slate-600 text-sm">
+      <input type="checkbox" name="{{ name }}" value="{{ value }}"
+             {% if value in selected %}checked{% endif %}
+             class="rounded border-slate-300 text-sky-600 focus:ring-sky-400">
+      <span class="flex-1">{{ display }}</span>
+      <span class="text-xs text-slate-400" data-count-{{ name }}="{{ value }}">{{ count_map.get(value, 0) }}</span>
+    </label>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}

@@ -1,4 +1,11 @@
 {% extends 'header-main-footer.html' %}
+{% import "macros/components.html" as m %}
+{% import "macros/icons.html" as icons %}
+
+
+{% block extra_head %}
+<link rel="alternate" type="application/atom+xml" title="Ambuda blog" href="{{ url_for('blog.feed') }}">
+{% endblock %}
 
 
 {% block meta_description -%}
@@ -6,8 +13,74 @@ Follow along with the latest updates on Ambuda.
 {%- endblock %}
 
 
+{% block header %}
+<div class="bg-brand text-white"
+     style="background-image: radial-gradient(circle 1px at center, rgba(255,255,255,0.07) 1px, transparent 1px); background-size: 24px 24px;">
+  <div class="text-white/60 hover:text-white transition border-white/20">
+    {% include "include/header-login.html" %}
+  </div>
+
+  <header class="text-center pt-16 pb-8">
+    <h1 class="font-bold text-5xl serif">{{ _('Blog') }}</h1>
+  </header>
+
+  {# Decorative divider #}
+  <div class="flex items-center justify-center gap-3 mx-auto w-1/3 opacity-20 mb-6">
+    <span class="bg-white block flex-1 h-px"></span>
+    <span class="text-white text-xs">&#x2726;</span>
+    <span class="bg-white block flex-1 h-px"></span>
+  </div>
+
+  {# Tabs #}
+  <nav class="flex justify-center gap-8 pb-4">
+    {% for name, label, url in [
+      ("posts", _("Posts"), url_for("blog.index")),
+      ("feed",  _("Feed"),  url_for("blog.feed")),
+    ] %}
+    <a href="{{ url }}"
+       class="pb-2 text-sm font-medium transition border-b-2 serif flex items-center gap-1
+         {% if blog_active == name %}border-white text-white{% else %}border-transparent text-white/50 hover:text-white/80{% endif %}">
+      {% if name == 'feed' %}{{ icons.i_feed() }}{% endif %}
+      {{ label }}
+    </a>
+    {% endfor %}
+    {% if current_user.is_authenticated and current_user.is_moderator %}
+    <a href="{{ url_for('blog.create_post') }}"
+       class="pb-2 text-sm font-medium transition border-b-2 serif
+         {% if blog_active == 'create' %}border-white text-white{% else %}border-transparent text-white/50 hover:text-white/80{% endif %}">
+      {{ _('Create') }}
+    </a>
+    {% endif %}
+  </nav>
+</div>
+{% endblock %}
+
+
 {% block main %}
-  <article class="p-4 xl:p-0 max-w-4xl mx-auto mb-24">
-  {% block content %}{% endblock %}
-  </article>
+  <div class="p-4 xl:p-0 max-w-5xl mx-auto">
+    {% block preamble %}{% endblock %}
+  </div>
+  <div class="p-4 xl:p-0 max-w-5xl mx-auto mb-24 md:flex md:gap-12">
+    <article class="flex-1 min-w-0">
+    {% block content %}{% endblock %}
+    </article>
+
+    {% if posts %}
+    <aside class="hidden md:block w-64 shrink-0 mt-12">
+      <div class="bg-slate-50 rounded-lg p-4">
+        <h2 class="font-bold text-sm uppercase text-slate-400 mb-3">{{ _('Recent posts') }}</h2>
+        <ul class="space-y-2">
+        {% for p in posts %}
+          <li>
+            <a class="text-sm hover:underline" href="{{ url_for('blog.post', slug=p.slug) }}">
+              {{ p.title }}
+            </a>
+            <p class="text-xs text-slate-400">{{ p.created_at|time_ago }}</p>
+          </li>
+        {% endfor %}
+        </ul>
+      </div>
+    </aside>
+    {% endif %}
+  </div>
 {% endblock %}

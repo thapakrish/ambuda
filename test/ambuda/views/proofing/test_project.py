@@ -310,7 +310,7 @@ def test_batch_status__no_p2(no_p1_client):
 def test_batch_status__p2_get(rama_client):
     resp = rama_client.get("/proofing/test-project/tools/batch-status")
     assert resp.status_code == 200
-    assert "Set Status for Image Range" in resp.text
+    assert "Start image" in resp.text
 
 
 def test_batch_status__p2_preview(rama_client):

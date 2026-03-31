@@ -1,12 +1,11 @@
-{% extends 'proofing/base-sidebar.html' %}
+{% extends 'proofing/base-project.html' %}
 {% import "macros/components.html" as components %}
 {% import "macros/proofing.html" as m %}
 
 
 {% block title %}Publish Preview: {{ project.display_title }} | Ambuda{% endblock %}
 
-
-{% block sidebar %}{{ m.main_nav('projects', current_user=current_user) }}{% endblock %}
+{% block active_tab %}publish{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -18,9 +17,6 @@
 
 {% block content %}
 {{ components.flash_messages() }}
-
-{{ m.project_header_nested('Publish Preview', project) }}
-{{ m.project_tabs(project=project, active='publish', is_mod=current_user.is_moderator, is_p2=current_user.is_p2) }}
 
 <div class="not-prose max-w-none">
   <div class="mb-4">

@@ -1,19 +1,15 @@
-{% extends 'proofing/base-sidebar.html' %}
+{% extends 'proofing/base-project.html' %}
 {% import "macros/components.html" as components %}
 {% import "macros/proofing.html" as m %}
 
 
 {% block title %}Batch LLM: {{ project.display_title }} | Ambuda{% endblock %}
 
-
-{% block sidebar %}{{ m.main_nav('projects', current_user=current_user) }}{% endblock %}
+{% block active_tab %}tools{% endblock %}
 
 
 {% block content %}
 {{ components.flash_messages() }}
-
-{{ m.project_header_nested('Batch LLM', project) }}
-{{ m.project_tabs(project=project, active='tools', is_p2=current_user.is_p2) }}
 
 <div class="prose">
   <p>Run an LLM prompt over a range of pages. Results are stored as suggestions for review.</p>

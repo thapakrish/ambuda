@@ -14,18 +14,20 @@ def test_values(client):
 
 
 def test_people(client):
-    resp = client.get("/about/people", follow_redirects=True)
-    assert "<h1>People</h1>" in resp.text
-
-
-def test_people_core(client):
-    resp = client.get("/about/people/core")
+    resp = client.get("/about/people/")
     assert "Our core team" in resp.text
 
 
-def test_people_proofing(client):
+def test_people_core_redirects(client):
+    resp = client.get("/about/people/core")
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/about/people/")
+
+
+def test_people_proofing_redirects(client):
     resp = client.get("/about/people/proofing")
-    assert "Dozens of proofers" in resp.text
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/about/people/")
 
 
 def test_code_and_data(client):

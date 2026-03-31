@@ -42,6 +42,11 @@ def contact():
     return redirect(url_for("about.contact"))
 
 
+@bp.route("/blog.xml")
+def blog_feed():
+    return redirect(url_for("blog.feed"))
+
+
 @bp.route("/donate")
 def donate():
     return render_template("site/donate.html")
