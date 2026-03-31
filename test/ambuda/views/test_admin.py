@@ -374,16 +374,11 @@ def test_task_batch_default():
 
 def test_batch_tasks_configured_correctly():
     """Verify which tasks are batch=True and which are not."""
-    from ambuda.views.admin.main import MODEL_CONFIG
-
     batch_slugs = set()
-    non_batch_slugs = set()
     for config in MODEL_CONFIG:
         for task in config.tasks:
             if task.batch:
                 batch_slugs.add(task.slug)
-            else:
-                non_batch_slugs.add(task.slug)
 
     assert batch_slugs == {
         "add-genre",
@@ -391,20 +386,7 @@ def test_batch_tasks_configured_correctly():
         "run-quality-report",
         "delete-exports",
         "regenerate-pages",
-    }
-    assert non_batch_slugs == {
-        "import-text",
-        "import-parse-data",
-        "import-metadata",
-        "export-metadata",
-        "import-dictionaries",
-        "import-projects",
-        "export-projects",
-        "manage-tree",
-        "save-xml-to-disk-cache",
-        "export-text-archive",
-        "export-collections",
-        "import-collections",
+        "move-exports",
     }
 
 

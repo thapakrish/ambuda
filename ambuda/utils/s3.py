@@ -80,6 +80,18 @@ class LocalFSBotoClient:
         dest.write_bytes(local_path.read_bytes())
         _log(f"download_file to {local_path}")
 
+    def copy_object(self, CopySource: dict, Bucket: str, Key: str, **kwargs):
+        src_path = self._get_local_path(CopySource["Bucket"], CopySource["Key"])
+        if not src_path.exists():
+            raise Exception(
+                f"Object not found: {CopySource['Bucket']}/{CopySource['Key']}"
+            )
+        dest_path = self._get_local_path(Bucket, Key)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        dest_path.write_bytes(src_path.read_bytes())
+        _log(f"copy_object {src_path} -> {dest_path}")
+        return {}
+
     def delete_object(self, Bucket: str, Key: str, **kwargs):
         local_path = self._get_local_path(Bucket, Key)
         if local_path.exists():
@@ -145,6 +157,14 @@ class S3Path:
 
     def download_file(self, local_path: str | Path):
         _get_client().download_file(self.bucket, self.key, local_path)
+
+    def copy_to(self, dest: "S3Path"):
+        """Copy this object to another S3 path."""
+        _get_client().copy_object(
+            CopySource={"Bucket": self.bucket, "Key": self.key},
+            Bucket=dest.bucket,
+            Key=dest.key,
+        )
 
     def delete(self):
         _get_client().delete_object(Bucket=self.bucket, Key=self.key)

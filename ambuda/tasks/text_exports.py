@@ -375,3 +375,75 @@ def create_text_archive_inner(app_environment, engine=None):
 @app.task(bind=True)
 def create_text_archive(self, app_environment):
     create_text_archive_inner(app_environment)
+
+
+def move_text_exports_inner(
+    export_ids: list[int],
+    old_prefix: str,
+    new_prefix: str,
+    app_environment: str,
+    engine=None,
+):
+    """Move selected TextExports from one prefix to another.
+
+    For each export, this replaces `old_prefix` with `new_prefix` in both the
+    slug and the S3 key, copies the file to the new S3 location, deletes the
+    old one, and updates the DB record.
+    """
+    with get_db_session(app_environment, engine=engine) as (session, q, config_obj):
+        moved = 0
+        for export_id in export_ids:
+            text_export = session.get(db.TextExport, export_id)
+            if not text_export:
+                logging.warning(f"TextExport {export_id} not found, skipping")
+                continue
+
+            old_s3 = S3Path.from_path(text_export.s3_path)
+            if old_prefix not in old_s3.key:
+                logging.warning(
+                    f"TextExport {export_id} s3_path '{text_export.s3_path}' "
+                    f"does not contain prefix '{old_prefix}', skipping"
+                )
+                continue
+
+            new_key = old_s3.key.replace(old_prefix, new_prefix, 1)
+            new_s3 = S3Path(old_s3.bucket, new_key)
+
+            # Copy then delete
+            try:
+                old_s3.copy_to(new_s3)
+                old_s3.delete()
+                logging.info(f"Moved S3 file: {old_s3} -> {new_s3}")
+            except Exception as e:
+                logging.warning(
+                    f"Could not move S3 file for TextExport {export_id}: {e}"
+                )
+
+            # Update disk cache for XML exports
+            if text_export.export_type == ExportType.XML:
+                text = session.get(db.Text, text_export.text_id)
+                if text:
+                    delete_cached_xml(config_obj.SERVER_FILE_CACHE, text.slug)
+
+            old_s3_path = text_export.s3_path
+            text_export.s3_path = new_s3.path
+            text_export.updated_at = datetime.now(UTC)
+            moved += 1
+            logging.info(
+                f"Updated TextExport {export_id} s3_path: "
+                f"'{old_s3_path}' -> '{new_s3.path}'"
+            )
+
+        session.commit()
+        logging.info(f"Moved {moved} of {len(export_ids)} export(s)")
+
+
+@app.task(bind=True)
+def move_text_exports(
+    self,
+    export_ids: list[int],
+    old_prefix: str,
+    new_prefix: str,
+    app_environment: str,
+):
+    move_text_exports_inner(export_ids, old_prefix, new_prefix, app_environment)

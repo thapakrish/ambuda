@@ -1,0 +1,64 @@
+{% extends "admin/base.html" %}
+{% from "admin/macros.html" import flash_messages %}
+
+{% block title %}Move Exports{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl">
+  <div class="mb-6">
+    <h1 class="text-3xl font-bold text-slate-800">Move Exports (Change Prefix)</h1>
+    <p class="text-slate-600 mt-2">Replace a prefix in the slug and S3 path of the selected exports.</p>
+  </div>
+
+  {{ flash_messages() }}
+
+  <div class="mb-6 bg-slate-50 rounded-lg border border-slate-200 p-4">
+    <h2 class="text-sm font-semibold text-slate-700 mb-2">Selected Exports ({{ exports|length }})</h2>
+    <ul class="text-sm text-slate-600 space-y-1 max-h-48 overflow-y-auto">
+      {% for export in exports %}
+      <li>{{ export.id }}: {{ export.slug }} <span class="text-slate-400">({{ export.s3_path }})</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <form method="POST" class="bg-white rounded-lg border border-slate-200 p-6">
+    {{ form.csrf_token }}
+
+    {% for export_id in selected_ids %}
+    <input type="hidden" name="selected_ids" value="{{ export_id }}">
+    {% endfor %}
+
+    <div class="mb-4">
+      <label for="{{ form.old_prefix.id }}" class="block text-sm font-semibold text-slate-700 mb-1">
+        Old Prefix
+      </label>
+      {{ form.old_prefix(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500", placeholder="e.g. ramayana/") }}
+      <p class="mt-1 text-xs text-slate-500">The prefix to find in each export's slug and S3 path</p>
+      {% for error in form.old_prefix.errors %}
+        <p class="mt-1 text-sm text-red-600">{{ error }}</p>
+      {% endfor %}
+    </div>
+
+    <div class="mb-4">
+      <label for="{{ form.new_prefix.id }}" class="block text-sm font-semibold text-slate-700 mb-1">
+        New Prefix
+      </label>
+      {{ form.new_prefix(class="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500", placeholder="e.g. valmiki-ramayana/") }}
+      <p class="mt-1 text-xs text-slate-500">The replacement prefix</p>
+      {% for error in form.new_prefix.errors %}
+        <p class="mt-1 text-sm text-red-600">{{ error }}</p>
+      {% endfor %}
+    </div>
+
+    <div class="flex gap-3 pt-4 border-t border-slate-200">
+      <button type="submit" class="px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 transition">
+        Move Exports
+      </button>
+      <a href="{{ url_for('admin.list_model', model_name=model_name) }}"
+         class="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 transition">
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,12 +1,7 @@
 import json
-from base64 import urlsafe_b64encode
 
 import ambuda.queries as q
 import ambuda.database as db
-
-
-def _cursor(offset):
-    return urlsafe_b64encode(str(offset).encode()).decode()
 
 
 def test_index(client):
@@ -113,22 +108,22 @@ def test_counts_reflect_filters(client):
     assert mula_source_total == mula["count"]
 
 
-def test_cursor_pagination(client):
-    """Cursor parameter is accepted."""
-    # No cursor = first page
+def test_offset_pagination(client):
+    """Offset parameter is accepted."""
+    # No offset = first page
     resp = client.get("/texts/catalog/?partial=1")
     assert resp.json["count"] >= 0
 
-    # Valid cursor
-    resp = client.get(f"/texts/catalog/?cursor={_cursor(0)}&partial=1")
+    # Valid offset
+    resp = client.get("/texts/catalog/?offset=0&partial=1")
     assert resp.json["count"] >= 0
 
-    # Cursor past the end should be clamped, not error
-    resp = client.get(f"/texts/catalog/?cursor={_cursor(99999)}&partial=1")
+    # Offset past the end should be clamped, not error
+    resp = client.get("/texts/catalog/?offset=99999&partial=1")
     assert resp.json["count"] >= 0
 
-    # Invalid cursor should fall back to offset 0
-    resp = client.get("/texts/catalog/?cursor=invalid&partial=1")
+    # Invalid offset is ignored (type=int defaults to 0)
+    resp = client.get("/texts/catalog/?offset=invalid&partial=1")
     assert resp.json["count"] >= 0
 
 

@@ -6,7 +6,11 @@
 {# ── Sidebar checkbox group macro ── #}
 {% macro checkbox_group(name, label, options, selected, count_map) %}
 <div>
-  <label class="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1.5">{{ label }}</label>
+  <div class="flex items-center justify-between mb-1.5">
+    <label class="block text-xs font-medium text-slate-500 uppercase tracking-wide">{{ label }}</label>
+    <button type="button" data-clear="{{ name }}"
+            class="text-xs text-slate-400 hover:text-slate-600 transition {% if not selected %}hidden{% endif %}">{{ _('Clear') }}</button>
+  </div>
   <div class="space-y-1">
     {% for value, display in options %}
     <label class="flex items-center gap-2 cursor-pointer hover:text-slate-700 text-slate-600 text-sm">
@@ -61,10 +65,8 @@
       <div>
         <div class="flex items-center justify-between mb-2">
           <label class="block text-xs font-medium text-slate-500 uppercase tracking-wide">{{ _('Collections') }}</label>
-          {% if collection_ids %}
-          <button type="button" id="clear-collections"
-                  class="text-xs text-slate-400 hover:text-slate-600 transition">{{ _('Clear') }}</button>
-          {% endif %}
+          <button type="button" id="clear-collections" data-clear="collection"
+                  class="text-xs text-slate-400 hover:text-slate-600 transition {% if not collection_ids %}hidden{% endif %}">{{ _('Clear') }}</button>
         </div>
         <div class="space-y-1.5">
           {% for c in collections %}
@@ -180,14 +182,14 @@
   if (!form || !container) return;
 
   var timer = null;
-  var currentCursor = '';
+  var currentOffset = 0;
 
-  function doFetch(cursor) {
-    currentCursor = cursor || '';
+  function doFetch(offset) {
+    currentOffset = offset || 0;
     var params = new URLSearchParams(new FormData(form));
     var clean = new URLSearchParams();
     params.forEach(function(v, k) { if (v) clean.set(k, v); });
-    if (currentCursor) clean.set('cursor', currentCursor);
+    if (currentOffset) clean.set('offset', currentOffset);
     clean.set('partial', '1');
 
     fetch(form.action + '?' + clean.toString())
@@ -215,19 +217,27 @@
 
   // Intercept pagination link clicks (delegated on results + bar)
   function handlePaginationClick(e) {
-    var link = e.target.closest('nav a[href*="cursor="]');
+    var link = e.target.closest('nav a[href*="offset="]');
     if (!link) return;
     e.preventDefault();
     var url = new URL(link.href, location.origin);
-    doFetch(url.searchParams.get('cursor') || '');
+    doFetch(url.searchParams.get('offset') || 0);
   }
   container.addEventListener('click', handlePaginationClick);
   bar.addEventListener('click', handlePaginationClick);
+
+  function updateClearButtons(name) {
+    var btn = form.querySelector('button[data-clear="' + name + '"]');
+    if (!btn) return;
+    var any = form.querySelector('input[name="' + name + '"]:checked');
+    btn.classList.toggle('hidden', !any);
+  }
 
   // All selects and checkboxes trigger immediate fetch (reset cursor)
   form.addEventListener('change', function(e) {
     if (e.target.matches('select, input[type="checkbox"]')) {
       clearTimeout(timer);
+      if (e.target.type === 'checkbox') updateClearButtons(e.target.name);
       doFetch();
     }
   });
@@ -241,14 +251,15 @@
     });
   }
 
-  // Clear collections
-  var clearBtn = document.getElementById('clear-collections');
-  if (clearBtn) {
-    clearBtn.addEventListener('click', function() {
-      form.querySelectorAll('input[name="collection"]').forEach(function(cb) { cb.checked = false; });
+  // Clear checkbox groups
+  form.querySelectorAll('button[data-clear]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var name = btn.getAttribute('data-clear');
+      form.querySelectorAll('input[name="' + name + '"]').forEach(function(cb) { cb.checked = false; });
+      btn.classList.add('hidden');
       doFetch();
     });
-  }
+  });
 
   // Reset all filters
   var resetLink = document.getElementById('reset-filters');
@@ -257,6 +268,7 @@
       e.preventDefault();
       form.reset();
       form.querySelectorAll('input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
+      form.querySelectorAll('button[data-clear]').forEach(function(b) { b.classList.add('hidden'); });
       doFetch();
     });
   }

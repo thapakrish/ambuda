@@ -1,6 +1,5 @@
 """Views for the text catalog with filtering and search."""
 
-from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections import Counter
 
 from flask import Blueprint, render_template, request, jsonify
@@ -125,32 +124,12 @@ def _compute_counts(entries, collections=None):
     }
 
 
-def _decode_cursor(cursor):
-    """Decode an opaque cursor string to an integer offset. Returns 0 on failure."""
-    if not cursor:
-        return 0
-    try:
-        return max(0, int(urlsafe_b64decode(cursor.encode()).decode()))
-    except Exception:
-        return 0
-
-
-def _encode_cursor(offset):
-    """Encode an integer offset as an opaque cursor string."""
-    return urlsafe_b64encode(str(offset).encode()).decode()
-
-
-def _paginate(items, cursor, per_page):
-    """Return (page_items, total, prev_cursor, next_cursor, offset)."""
+def _paginate(items, offset, per_page):
+    """Return (page_items, total, offset)."""
     total = len(items)
-    offset = _decode_cursor(cursor)
-    offset = min(offset, max(0, total - 1))  # clamp to valid range
+    offset = max(0, min(offset, max(0, total - 1)))
     page_items = items[offset : offset + per_page]
-    prev_cursor = _encode_cursor(offset - per_page) if offset > 0 else None
-    next_cursor = (
-        _encode_cursor(offset + per_page) if offset + per_page < total else None
-    )
-    return page_items, total, prev_cursor, next_cursor, offset
+    return page_items, total, offset
 
 
 def _parse_headers(entries):
@@ -185,7 +164,7 @@ def index():
     sources = request.args.getlist("source")
     sort_field = request.args.get("sort", "title")
     sort_dir = request.args.get("sort_dir", "asc")
-    cursor = request.args.get("cursor", "")
+    offset = request.args.get("offset", 0, type=int)
 
     collections = q.collections()
     all_entries = _flatten_entries(text_utils.create_grouped_text_entries())
@@ -194,16 +173,12 @@ def index():
     )
     counts = _compute_counts(filtered, collections)
     _sort_entries(filtered, sort_field, sort_dir)
-    page_entries, total, prev_cursor, next_cursor, offset = _paginate(
-        filtered, cursor, PER_PAGE
-    )
+    page_entries, total, offset = _paginate(filtered, offset, PER_PAGE)
     headers = _parse_headers(page_entries)
 
     pagination = dict(
         total=total,
         per_page=PER_PAGE,
-        prev_cursor=prev_cursor,
-        next_cursor=next_cursor,
         offset=offset,
     )
 

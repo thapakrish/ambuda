@@ -315,6 +315,12 @@ MODEL_CONFIG = [
                 slug="save-xml-to-disk-cache",
                 handler=tasks.save_xml_to_disk_cache,
             ),
+            Task(
+                name="Move exports (change prefix)",
+                slug="move-exports",
+                handler=tasks.move_exports,
+                batch=True,
+            ),
         ],
         search_key="slug",
     ),

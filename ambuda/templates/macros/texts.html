@@ -3,16 +3,18 @@
 
 
 {# ── Pagination nav for catalog pages (cursor-based) ── #}
-{% macro catalog_pagination(prev_cursor, next_cursor, css="") %}
-{% if prev_cursor or next_cursor %}
-{% set base_args = request.args | reject_keys('cursor', 'partial') %}
+{% macro catalog_pagination(offset, per_page, total, css="") %}
+{% set has_prev = offset > 0 %}
+{% set has_next = offset + per_page < total %}
+{% if has_prev or has_next %}
+{% set base_args = request.args | reject_keys('offset', 'partial') %}
 <nav class="flex items-center gap-1 text-sm {{ css }}">
-  {% if prev_cursor %}
-  <a href="{{ url_for('catalog.index', cursor=prev_cursor, **base_args) }}"
+  {% if has_prev %}
+  <a href="{{ url_for('catalog.index', offset=[offset - per_page, 0] | max, **base_args) }}"
      class="px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 transition">&larr; {{ _('Prev') }}</a>
   {% endif %}
-  {% if next_cursor %}
-  <a href="{{ url_for('catalog.index', cursor=next_cursor, **base_args) }}"
+  {% if has_next %}
+  <a href="{{ url_for('catalog.index', offset=offset + per_page, **base_args) }}"
      class="px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 transition">{{ _('Next') }} &rarr;</a>
   {% endif %}
 </nav>

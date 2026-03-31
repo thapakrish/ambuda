@@ -21,7 +21,7 @@ from flask_wtf.file import FileField, FileRequired, MultipleFileField
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.types import DateTime
-from wtforms import SelectField
+from wtforms import SelectField, StringField
 from wtforms.validators import DataRequired
 
 import ambuda.database as db
@@ -32,6 +32,7 @@ from ambuda.utils.text_exports import ExportType
 from ambuda.tasks.text_exports import (
     delete_text_export,
     create_all_exports_for_text,
+    move_text_exports,
     populate_file_cache,
 )
 from ambuda.tasks.projects import regenerate_project_pages
@@ -899,3 +900,56 @@ def regenerate_pages(model_name, selected_ids: list | None = None):
         "success",
     )
     return redirect(url_for("admin.list_model", model_name=model_name))
+
+
+def move_exports(model_name, selected_ids: list | None = None):
+    """Batch action to move selected exports from one prefix to another."""
+
+    class MoveExportsForm(FlaskForm):
+        old_prefix = StringField("Old Prefix", validators=[DataRequired()])
+        new_prefix = StringField("New Prefix", validators=[DataRequired()])
+
+    if not selected_ids:
+        flash("No exports selected", "error")
+        return redirect(url_for("admin.list_model", model_name=model_name))
+
+    session = q.get_session()
+    form = MoveExportsForm()
+
+    if form.validate_on_submit():
+        old_prefix = form.old_prefix.data.strip()
+        new_prefix = form.new_prefix.data.strip()
+        app_environment = current_app.config["AMBUDA_ENVIRONMENT"]
+
+        export_ids = [int(eid) for eid in selected_ids]
+        move_text_exports.apply_async(
+            kwargs=dict(
+                export_ids=export_ids,
+                old_prefix=old_prefix,
+                new_prefix=new_prefix,
+                app_environment=app_environment,
+            ),
+            headers={"initiated_by": current_user.username},
+        )
+
+        flash(
+            f"Started move task for {len(export_ids)} export(s): "
+            f"'{old_prefix}' -> '{new_prefix}'",
+            "success",
+        )
+        return redirect(url_for("admin.list_model", model_name=model_name))
+
+    exports = []
+    for export_id in selected_ids:
+        export = session.get(db.TextExport, int(export_id))
+        if export:
+            exports.append(export)
+
+    return render_template(
+        "admin/task-move-exports.html",
+        model_name=model_name,
+        form=form,
+        exports=exports,
+        selected_ids=selected_ids,
+        **get_model_configs_context(),
+    )
