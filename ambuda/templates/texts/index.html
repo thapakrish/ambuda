@@ -1,6 +1,7 @@
 {% extends 'base-text.html' %}
 {% import "macros/components.html" as m %}
 {% import "macros/texts.html" as m_texts %}
+{% import "macros/icons.html" as icons %}
 
 
 {% block title %}{{ m.title(_('Texts')) }}{% endblock %}
@@ -19,11 +20,25 @@ analysis and integrated dictionary support for a variety of Sanskrit works.
 {% block main %}
 <div class="bg-slate-100">
 
-<article class="px-6 md:px-8 max-w-5xl mx-auto md:py-12 md:pb-36" x-data="textSearch">
-  <div class="my-4">
-    <input type="text" x-model="query"
-           placeholder="{{ _('Search for a text ...') }}"
-           class="w-full p-4 rounded border text-sm">
+<article class="px-6 md:px-8 max-w-5xl mx-auto md:py-12 md:pb-36">
+  <script>window.__searchItems = {{ search_items | tojson }};</script>
+  <div class="my-4 relative" x-data="homeSearch(window.__searchItems)" @click.outside="open = false">
+    <div class="relative">
+      <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">{{ icons.i_search_sm() }}</span>
+      <input type="text" x-model="query" @input="search()" @keydown="onKeydown($event)"
+             placeholder="{{ _('Search for a text ...') }}"
+             class="w-full pl-10 pr-5 py-3 rounded-lg text-slate-800 bg-white border border-slate-200 shadow-sm focus:outline-none focus:border-sky-400 focus:shadow-[0_0_0_3px_rgba(56,189,248,0.3)] transition text-base">
+    </div>
+    <ul x-show="open" x-cloak
+        class="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-80 overflow-y-auto z-50">
+      <template x-for="(r, i) in results" :key="r.slug">
+        <li @click="go(r.slug)" @mouseenter="selectedIndex = i"
+            :class="i === selectedIndex ? 'bg-sky-50 text-sky-900' : 'text-slate-700'"
+            class="px-5 py-2.5 cursor-pointer hover:bg-sky-50 deva-serif">
+          <span x-text="r.title"></span>
+        </li>
+      </template>
+    </ul>
   </div>
   {{ m_texts.grouped_texts(grouped_entries) }}
 </article>

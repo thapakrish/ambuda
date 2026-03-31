@@ -86,6 +86,12 @@ def markdown(text: str) -> str:
     return MARKDOWN.render(text)
 
 
+def reject_keys(d, *keys):
+    """Return a copy of dict *d* without the specified keys."""
+    excluded = set(keys)
+    return {k: v for k, v in d.items() if k not in excluded}
+
+
 def human_readable_bytes(bytes: int) -> str:
     suffixes = ["B", "KiB", "MiB", "GiB"]
 

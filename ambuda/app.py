@@ -171,6 +171,7 @@ def create_app(config_env: str):
             "markdown": filters.markdown,
             "time_ago": filters.time_ago,
             "human_readable_bytes": filters.human_readable_bytes,
+            "reject_keys": filters.reject_keys,
         }
     )
     app.jinja_env.globals.update(

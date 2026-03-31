@@ -1,5 +1,6 @@
 """Views for the text catalog with filtering and search."""
 
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections import Counter
 
 from flask import Blueprint, render_template, request, jsonify
@@ -10,7 +11,7 @@ from ambuda.utils.xml import parse_tei_header
 
 bp = Blueprint("catalog", __name__)
 
-PER_PAGE = 100
+PER_PAGE = 25
 
 # Status badge config: (value, label, css_color, css_dot)
 STATUS_BADGES = [
@@ -90,12 +91,32 @@ def _sort_entries(entries, field, direction):
         entries.sort(key=lambda e: e.text.title.lower(), reverse=reverse)
 
 
-def _compute_counts(entries):
-    """Compute sidebar facet counts from a list of entries."""
-    coll_counts: Counter = Counter()
+def _compute_counts(entries, collections=None):
+    """Compute sidebar facet counts from a list of entries.
+
+    Collection counts are rolled up: a parent's count is the number of unique
+    texts tagged with it *or any of its children*, so the parent total is never
+    less than the sum of its children.
+    """
+    # Build per-collection sets of text ids for deduplication
+    coll_text_ids: dict[int, set[int]] = {}
     for e in entries:
         for c in e.text.collections:
-            coll_counts[c.id] += 1
+            coll_text_ids.setdefault(c.id, set()).add(e.text.id)
+
+    # Roll up: grandchildren into children, then children into parents
+    if collections:
+        for parent in collections:
+            for child in parent.children or []:
+                child_set = coll_text_ids.setdefault(child.id, set())
+                for grandchild in child.children or []:
+                    child_set |= coll_text_ids.get(grandchild.id, set())
+            parent_set = coll_text_ids.setdefault(parent.id, set())
+            for child in parent.children or []:
+                parent_set |= coll_text_ids.get(child.id, set())
+
+    coll_counts = Counter({cid: len(ids) for cid, ids in coll_text_ids.items()})
+
     return {
         "type": Counter(_text_type(e.text) for e in entries),
         "collection": coll_counts,
@@ -104,13 +125,32 @@ def _compute_counts(entries):
     }
 
 
-def _paginate(items, page, per_page):
-    """Return (page_items, total, total_pages, clamped_page)."""
+def _decode_cursor(cursor):
+    """Decode an opaque cursor string to an integer offset. Returns 0 on failure."""
+    if not cursor:
+        return 0
+    try:
+        return max(0, int(urlsafe_b64decode(cursor.encode()).decode()))
+    except Exception:
+        return 0
+
+
+def _encode_cursor(offset):
+    """Encode an integer offset as an opaque cursor string."""
+    return urlsafe_b64encode(str(offset).encode()).decode()
+
+
+def _paginate(items, cursor, per_page):
+    """Return (page_items, total, prev_cursor, next_cursor, offset)."""
     total = len(items)
-    total_pages = max(1, -(-total // per_page))  # ceil division
-    page = max(1, min(page, total_pages))
-    start = (page - 1) * per_page
-    return items[start : start + per_page], total, total_pages, page
+    offset = _decode_cursor(cursor)
+    offset = min(offset, max(0, total - 1))  # clamp to valid range
+    page_items = items[offset : offset + per_page]
+    prev_cursor = _encode_cursor(offset - per_page) if offset > 0 else None
+    next_cursor = (
+        _encode_cursor(offset + per_page) if offset + per_page < total else None
+    )
+    return page_items, total, prev_cursor, next_cursor, offset
 
 
 def _parse_headers(entries):
@@ -145,19 +185,26 @@ def index():
     sources = request.args.getlist("source")
     sort_field = request.args.get("sort", "title")
     sort_dir = request.args.get("sort_dir", "asc")
-    page = request.args.get("page", 1, type=int)
+    cursor = request.args.get("cursor", "")
 
+    collections = q.collections()
     all_entries = _flatten_entries(text_utils.create_grouped_text_entries())
     filtered = _apply_filters(
         all_entries, search, collection_ids, text_types, statuses, sources
     )
-    counts = _compute_counts(filtered)
+    counts = _compute_counts(filtered, collections)
     _sort_entries(filtered, sort_field, sort_dir)
-    page_entries, total, total_pages, page = _paginate(filtered, page, PER_PAGE)
+    page_entries, total, prev_cursor, next_cursor, offset = _paginate(
+        filtered, cursor, PER_PAGE
+    )
     headers = _parse_headers(page_entries)
 
     pagination = dict(
-        page=page, total=total, total_pages=total_pages, per_page=PER_PAGE
+        total=total,
+        per_page=PER_PAGE,
+        prev_cursor=prev_cursor,
+        next_cursor=next_cursor,
+        offset=offset,
     )
 
     if request.args.get("partial") == "1":
@@ -178,7 +225,7 @@ def index():
         "catalog/index.html",
         entries=page_entries,
         headers=headers,
-        collections=q.collections(),
+        collections=collections,
         search=search,
         collection_ids=collection_ids,
         text_types=text_types,

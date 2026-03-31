@@ -66,7 +66,7 @@
                   class="text-xs text-slate-400 hover:text-slate-600 transition">{{ _('Clear') }}</button>
           {% endif %}
         </div>
-        <div class="space-y-1.5 max-h-64 overflow-y-auto">
+        <div class="space-y-1.5">
           {% for c in collections %}
           <div>
             <label class="flex items-center gap-2 cursor-pointer hover:text-slate-700 text-slate-600">
@@ -86,6 +86,19 @@
                 <span class="flex-1 deva-serif">{{ child.title | d | devanagari_to_user_script }}</span>
                 <span class="text-slate-400" data-count-collection="{{ child.id }}">{{ counts.collection.get(child.id, 0) }}</span>
               </label>
+              {% if child.children %}
+              <div class="ml-5 mt-1 space-y-1">
+                {% for grandchild in child.children %}
+                <label class="flex items-center gap-2 cursor-pointer hover:text-slate-700 text-slate-400 text-xs">
+                  <input type="checkbox" name="collection" value="{{ grandchild.id }}"
+                         {% if grandchild.id in collection_ids %}checked{% endif %}
+                         class="rounded border-slate-300 text-sky-600 focus:ring-sky-400">
+                  <span class="flex-1 deva-serif">{{ grandchild.title | d | devanagari_to_user_script }}</span>
+                  <span class="text-slate-400" data-count-collection="{{ grandchild.id }}">{{ counts.collection.get(grandchild.id, 0) }}</span>
+                </label>
+                {% endfor %}
+              </div>
+              {% endif %}
               {% endfor %}
             </div>
             {% endif %}
@@ -167,11 +180,14 @@
   if (!form || !container) return;
 
   var timer = null;
+  var currentCursor = '';
 
-  function doFetch() {
+  function doFetch(cursor) {
+    currentCursor = cursor || '';
     var params = new URLSearchParams(new FormData(form));
     var clean = new URLSearchParams();
     params.forEach(function(v, k) { if (v) clean.set(k, v); });
+    if (currentCursor) clean.set('cursor', currentCursor);
     clean.set('partial', '1');
 
     fetch(form.action + '?' + clean.toString())
@@ -197,7 +213,18 @@
       });
   }
 
-  // All selects and checkboxes trigger immediate fetch
+  // Intercept pagination link clicks (delegated on results + bar)
+  function handlePaginationClick(e) {
+    var link = e.target.closest('nav a[href*="cursor="]');
+    if (!link) return;
+    e.preventDefault();
+    var url = new URL(link.href, location.origin);
+    doFetch(url.searchParams.get('cursor') || '');
+  }
+  container.addEventListener('click', handlePaginationClick);
+  bar.addEventListener('click', handlePaginationClick);
+
+  // All selects and checkboxes trigger immediate fetch (reset cursor)
   form.addEventListener('change', function(e) {
     if (e.target.matches('select, input[type="checkbox"]')) {
       clearTimeout(timer);
@@ -205,12 +232,12 @@
     }
   });
 
-  // Search input: debounced
+  // Search input: debounced (reset cursor)
   var searchInput = form.querySelector('input[name="q"]');
   if (searchInput) {
     searchInput.addEventListener('input', function() {
       clearTimeout(timer);
-      timer = setTimeout(doFetch, 300);
+      timer = setTimeout(function() { doFetch(); }, 300);
     });
   }
 

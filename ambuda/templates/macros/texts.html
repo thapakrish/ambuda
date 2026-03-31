@@ -2,17 +2,17 @@
 {% import "macros/icons.html" as i %}
 
 
-{# ── Pagination nav for catalog pages ── #}
-{% macro catalog_pagination(page, total_pages, css="") %}
-{% if total_pages > 1 %}
+{# ── Pagination nav for catalog pages (cursor-based) ── #}
+{% macro catalog_pagination(prev_cursor, next_cursor, css="") %}
+{% if prev_cursor or next_cursor %}
+{% set base_args = request.args | reject_keys('cursor', 'partial') %}
 <nav class="flex items-center gap-1 text-sm {{ css }}">
-  {% if page > 1 %}
-  <a href="{{ url_for('catalog.index', page=page - 1, **request.args.to_dict(flat=false)) | replace('&partial=1', '') }}"
+  {% if prev_cursor %}
+  <a href="{{ url_for('catalog.index', cursor=prev_cursor, **base_args) }}"
      class="px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 transition">&larr; {{ _('Prev') }}</a>
   {% endif %}
-  <span class="px-2 text-slate-400">{{ page }} / {{ total_pages }}</span>
-  {% if page < total_pages %}
-  <a href="{{ url_for('catalog.index', page=page + 1, **request.args.to_dict(flat=false)) | replace('&partial=1', '') }}"
+  {% if next_cursor %}
+  <a href="{{ url_for('catalog.index', cursor=next_cursor, **base_args) }}"
      class="px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 transition">{{ _('Next') }} &rarr;</a>
   {% endif %}
 </nav>

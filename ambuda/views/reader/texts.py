@@ -24,6 +24,7 @@ from ambuda.consts import SINGLE_SECTION_SLUG
 from ambuda.models.texts import TextConfig
 from ambuda.utils import text_utils
 from ambuda.utils import xml
+from ambuda.utils.text_exports import ExportType
 from ambuda.utils.json_serde import AmbudaJSONEncoder
 from ambuda.utils.text_validation import ReportSummary
 from ambuda.views.reader.schema import Block, Section
@@ -45,6 +46,11 @@ class SourceMetadataEntry(BaseModel):
     publication_year: str | None = None
 
 
+class TextUrlsEntry(BaseModel):
+    xml: str | None = None
+    text: str | None = None
+
+
 class TextMetadataEntry(BaseModel):
     slug: str
     title: str
@@ -55,6 +61,7 @@ class TextMetadataEntry(BaseModel):
     author: AuthorMetadataEntry | None = None
     source: SourceMetadataEntry | None = None
     collections: list[str] = []
+    urls: TextUrlsEntry | None = None
 
 
 class CollectionMetadataEntry(BaseModel):
@@ -197,7 +204,21 @@ def _export_key(x: db.TextExport) -> tuple:
 def index():
     """Show all texts."""
     grouped_entries = text_utils.create_grouped_text_entries()
-    return render_template("texts/index.html", grouped_entries=grouped_entries)
+    all_texts = text_utils.create_text_entries()
+    search_items = [
+        {
+            "title": transliterate(
+                e.text.title, Scheme.HarvardKyoto, Scheme.Devanagari
+            ),
+            "slug": e.text.slug,
+        }
+        for e in all_texts
+    ]
+    return render_template(
+        "texts/index.html",
+        grouped_entries=grouped_entries,
+        search_items=search_items,
+    )
 
 
 @bp.route("/<slug>/")
@@ -262,23 +283,50 @@ def _isoformat_utc(dt) -> str | None:
     return dt.isoformat()
 
 
+def _strip_or_none(value: str | None) -> str | None:
+    """Strip whitespace and return None if empty."""
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
 def _parse_source(header_xml: str | None) -> SourceMetadataEntry | None:
     """Parse TEI header XML into a SourceMetadataEntry, or None."""
     if not header_xml:
         return None
     try:
         h = xml.parse_tei_header(header_xml)
+        title = _strip_or_none(h.tei_title)
         source = SourceMetadataEntry(
-            title=h.tei_title if h.tei_title != "Unknown" else None,
-            author=h.source_author or None,
-            editor=h.source_editor or None,
-            publisher=h.source_publisher or None,
-            publisher_place=h.source_publisher_place or None,
-            publication_year=h.source_publication_year or None,
+            title=title if title and title != "Unknown" else None,
+            author=_strip_or_none(h.source_author),
+            editor=_strip_or_none(h.source_editor),
+            publisher=_strip_or_none(h.source_publisher),
+            publisher_place=_strip_or_none(h.source_publisher_place),
+            publication_year=_strip_or_none(h.source_publication_year),
         )
         return source if source.model_dump(exclude_none=True) else None
     except Exception:
         return None
+
+
+def _export_urls(t: db.Text) -> TextUrlsEntry | None:
+    """Build download URLs for a text's XML and plain-text exports."""
+    xml_url = None
+    text_url = None
+    for export in t.exports:
+        if export.export_type == ExportType.XML:
+            xml_url = url_for(
+                "texts.download_file", filename=export.slug, _external=True
+            )
+        elif export.export_type == ExportType.PLAIN_TEXT:
+            text_url = url_for(
+                "texts.download_file", filename=export.slug, _external=True
+            )
+    if xml_url or text_url:
+        return TextUrlsEntry(xml=xml_url, text=text_url)
+    return None
 
 
 def _text_to_metadata(t: db.Text) -> TextMetadataEntry:
@@ -298,6 +346,7 @@ def _text_to_metadata(t: db.Text) -> TextMetadataEntry:
         author=author,
         source=_parse_source(t.header),
         collections=[c.slug for c in t.collections],
+        urls=_export_urls(t),
     )
 
 
